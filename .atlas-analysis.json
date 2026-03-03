@@ -1,0 +1,156 @@
+{
+  "projectType": "frontend",
+  "projectName": "StreamVault",
+  "projectDescription": "A modern media library manager with Google Drive integration, TMDB metadata, and MPV playback",
+  "theme": "aspen",
+  "primaryColor": "#ffffff",
+  "lightColor": "#d4d4d4",
+  "darkColor": "#171717",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Core Features",
+            "pages": [
+              "features/google-drive",
+              "features/metadata",
+              "features/playback",
+              "features/library-management"
+            ]
+          },
+          {
+            "group": "Social Features",
+            "pages": [
+              "social/watch-together",
+              "social/friends",
+              "social/activity"
+            ]
+          },
+          {
+            "group": "Configuration",
+            "pages": [
+              "configuration/settings",
+              "configuration/tmdb-setup",
+              "configuration/google-drive-setup",
+              "configuration/player-setup"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/self-hosting",
+              "guides/troubleshooting",
+              "guides/keyboard-shortcuts"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Frontend API",
+            "pages": [
+              "api/overview",
+              "api/media-operations",
+              "api/player-control",
+              "api/cloud-operations"
+            ]
+          },
+          {
+            "group": "Tauri Commands",
+            "pages": [
+              "api/tauri/library",
+              "api/tauri/playback",
+              "api/tauri/metadata",
+              "api/tauri/google-drive",
+              "api/tauri/social"
+            ]
+          },
+          {
+            "group": "Backend Integration",
+            "pages": [
+              "api/backend/overview",
+              "api/backend/authentication",
+              "api/backend/websocket"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Components",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "components/overview",
+              "components/ui-library"
+            ]
+          },
+          {
+            "group": "Core Components",
+            "pages": [
+              "components/movie-card",
+              "components/episode-browser",
+              "components/settings-modal",
+              "components/sidebar"
+            ]
+          },
+          {
+            "group": "Player Components",
+            "pages": [
+              "components/video-player",
+              "components/mpv-integration",
+              "components/resume-dialog"
+            ]
+          },
+          {
+            "group": "Social Components",
+            "pages": [
+              "components/watch-together-modal",
+              "components/friends-panel",
+              "components/chat-window"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Google Drive integration with real-time change detection",
+    "TMDB metadata fetching with posters and backdrops",
+    "MPV media player integration with IPC control",
+    "TV show organization with season and episode tracking",
+    "Resume playback with progress tracking",
+    "Watch Together synchronization with WebSocket",
+    "Social features: friends, activity feed, and chat",
+    "System tray with Windows notifications",
+    "Monochrome UI with Radix UI and Framer Motion"
+  ],
+  "publicApiSurface": [
+    "get_library - Retrieve media library items",
+    "scan_cloud_library - Scan Google Drive for media",
+    "play_media - Launch MPV player with media file",
+    "update_resume_position - Save playback progress",
+    "search_tmdb - Search TMDB for metadata",
+    "fix_match - Manually correct metadata match",
+    "get_episodes - Retrieve TV show episodes",
+    "connect_google_drive - OAuth authentication flow",
+    "get_drive_account_info - Get Drive account details",
+    "create_watch_together_room - Create synchronized viewing session",
+    "join_watch_together_room - Join existing room",
+    "send_friend_request - Send friend request",
+    "get_activity_feed - Retrieve social activity",
+    "set_privacy_settings - Configure privacy options"
+  ]
+}
