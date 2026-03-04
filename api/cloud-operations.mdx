@@ -587,3 +587,92 @@ pub async fn list_files(
     response.json().await
 }
 ```
+
+## Cloud cache management
+
+### getCloudCacheInfo()
+
+Get information about the cloud cache including size and file count.
+
+```typescript
+export const getCloudCacheInfo = async (): Promise<CloudCacheInfo>
+```
+
+<ParamField path="returns" type="CloudCacheInfo">
+  Cache information object
+</ParamField>
+
+<ResponseField name="cache_dir" type="string">
+  Path to cache directory
+</ResponseField>
+
+<ResponseField name="total_size_bytes" type="number">
+  Total cache size in bytes
+</ResponseField>
+
+<ResponseField name="file_count" type="number">
+  Number of cached files
+</ResponseField>
+
+**Example**:
+
+```typescript
+const cacheInfo = await getCloudCacheInfo();
+console.log(`Cache size: ${(cacheInfo.total_size_bytes / 1024 / 1024).toFixed(2)} MB`);
+console.log(`Files cached: ${cacheInfo.file_count}`);
+```
+
+### cleanupCloudCache()
+
+Remove expired cache files based on expiry settings.
+
+```typescript
+export const cleanupCloudCache = async (): Promise<{ message: string }>
+```
+
+**Example**:
+
+```typescript
+const result = await cleanupCloudCache();
+console.log(result.message); // "Cleaned up 5 expired files"
+```
+
+### clearCloudCache()
+
+Delete all files from the cloud cache.
+
+```typescript
+export const clearCloudCache = async (): Promise<{ message: string }>
+```
+
+<Warning>
+This will remove all cached cloud media files. Playback will require re-downloading.
+</Warning>
+
+**Example**:
+
+```typescript
+const result = await clearCloudCache();
+console.log(result.message); // "Cache cleared successfully"
+```
+
+## Change detection
+
+### checkCloudChanges()
+
+Check for changes in Google Drive since last scan.
+
+```typescript
+async fn check_cloud_changes(state: State<'_, AppState>) -> Result<Vec<DriveChange>, String>
+```
+
+Returns list of files that have been added, modified, or deleted since the last scan.
+
+**Example**:
+
+```typescript
+import { invoke } from '@tauri-apps/api/tauri';
+
+const changes = await invoke('check_cloud_changes');
+console.log(`Found ${changes.length} changes`);
+```

@@ -238,3 +238,49 @@ All app data is stored in the platform-specific app data directory:
     Explore playback and progress tracking
   </Card>
 </CardGroup>
+
+## Application updates
+
+StreamVault includes built-in auto-update functionality:
+
+### checkForUpdates()
+
+Check for available updates from GitHub releases.
+
+```typescript
+export const checkForUpdates = async (): Promise<UpdateInfo>
+```
+
+Returns update information including version and download URL.
+
+### downloadUpdate()
+
+Download an update installer.
+
+```typescript
+export const downloadUpdate = async (url: string): Promise<string>
+```
+
+Downloads the installer and returns the local file path.
+
+### installUpdate()
+
+Install a downloaded update and restart the application.
+
+```typescript
+export const installUpdate = async (installerPath: string): Promise<void>
+```
+
+<Warning>
+This will close the application and launch the installer.
+</Warning>
+
+### getAppVersion()
+
+Get the current application version.
+
+```typescript
+export const getAppVersion = async (): Promise<string>
+```
+
+Returns version string (e.g., "3.0.21").
