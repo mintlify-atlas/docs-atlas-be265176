@@ -1,0 +1,593 @@
+---
+title: Library Organization
+description: SQLite database structure with smart TV show grouping and duplicate detection
+---
+
+## Overview
+
+StreamVault uses SQLite to organize your media library with intelligent TV show episode grouping, season organization, and automatic duplicate detection. The database stores metadata, progress, and relationships between series and episodes.
+
+## Database Schema
+
+The core database structure stores all media types in a single table with hierarchical relationships.
+
+### Media Table
+
+```sql
+-- database.rs:156
+CREATE TABLE media (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    year INTEGER,
+    overview TEXT,
+    poster_path TEXT,
+    file_path TEXT NOT NULL UNIQUE,
+    media_type TEXT NOT NULL,  -- 'movie', 'tvshow', 'tvepisode'
+    parent_id INTEGER,          -- For episodes, points to tvshow
+    season_number INTEGER,
+    episode_number INTEGER,
+    duration_seconds REAL DEFAULT 0,
+    resume_position_seconds REAL DEFAULT 0,
+    last_watched TIMESTAMP DEFAULT NULL,
+    tmdb_id TEXT DEFAULT NULL,
+    episode_title TEXT DEFAULT NULL,
+    still_path TEXT DEFAULT NULL,
+    is_cloud INTEGER DEFAULT 0,
+    cloud_file_id TEXT DEFAULT NULL,
+    cloud_folder_id TEXT DEFAULT NULL,
+    FOREIGN KEY (parent_id) REFERENCES media (id) ON DELETE CASCADE
+);
+```
+
+### Media Types
+
+```rust
+// database.rs:50
+pub struct MediaItem {
+    pub id: i64,
+    pub title: String,              // "Breaking Bad" or "S01E01"
+    pub year: Option<i32>,
+    pub overview: Option<String>,
+    pub poster_path: Option<String>,
+    pub file_path: Option<String>,
+    pub media_type: String,         // "movie", "tvshow", or "tvepisode"
+    pub duration_seconds: Option<f64>,
+    pub resume_position_seconds: Option<f64>,
+    pub last_watched: Option<String>,
+    pub season_number: Option<i32>,
+    pub episode_number: Option<i32>,
+    pub parent_id: Option<i64>,     // Link to parent tvshow
+    pub progress_percent: Option<f64>,
+    pub tmdb_id: Option<String>,
+    pub episode_title: Option<String>,
+    pub still_path: Option<String>,
+    pub is_cloud: Option<bool>,
+    pub cloud_file_id: Option<String>,
+}
+```
+
+**Three Media Types:**
+
+1. **`movie`** - Standalone movie files
+2. **`tvshow`** - TV series container (virtual, no actual file)
+3. **`tvepisode`** - Individual episode (linked to tvshow via `parent_id`)
+
+## TV Show Episode Grouping
+
+StreamVault automatically groups episodes under their parent TV show using TMDB IDs and title matching.
+
+### Series Detection
+
+```rust
+// media_manager.rs:293
+pub fn process_tv_episode(
+    db: &Database,
+    file_path: &str,
+    parsed: &ParsedMedia,
+    api_key: &str,
+    image_cache_dir: &str,
+    duration: f64,
+) {
+    // First check for existing series by title BEFORE searching TMDB
+    let existing_series = db.find_series_by_tmdb_or_title(None, &parsed.title, parsed.year);
+    
+    if let Ok(Some(existing_id)) = existing_series {
+        // Use existing series
+        println!("[TV] Found existing series by title match (ID: {})", existing_id);
+    } else {
+        // Search TMDB and create new series
+    }
+}
+```
+
+### Finding Series by TMDB ID or Title
+
+```rust
+// database.rs:873
+pub fn find_series_by_tmdb_or_title(
+    &self,
+    tmdb_id: Option<&str>,
+    title: &str,
+    year: Option<i32>,
+) -> Result<Option<i64>> {
+    // Strategy 1: Try TMDB ID (most reliable)
+    if let Some(tid) = tmdb_id {
+        if let Ok(id) = self.conn.query_row(
+            "SELECT id FROM media WHERE tmdb_id = ? AND media_type = 'tvshow'",
+            params![tid],
+            |row| row.get::<_, i64>(0)
+        ) {
+            return Ok(Some(id));
+        }
+    }
+    
+    // Strategy 2: Try exact title + year
+    if let Some(y) = year {
+        if let Ok(id) = self.conn.query_row(
+            "SELECT id FROM media WHERE LOWER(title) = LOWER(?) AND year = ? AND media_type = 'tvshow'",
+            params![title, y],
+            |row| row.get::<_, i64>(0)
+        ) {
+            return Ok(Some(id));
+        }
+    }
+    
+    // Strategy 3: Try just title (case-insensitive)
+    if let Ok(id) = self.conn.query_row(
+        "SELECT id FROM media WHERE LOWER(title) = LOWER(?) AND media_type = 'tvshow'",
+        params![title],
+        |row| row.get::<_, i64>(0)
+    ) {
+        return Ok(Some(id));
+    }
+    
+    Ok(None)
+}
+```
+
+### Creating TV Shows
+
+```rust
+// database.rs:1031
+pub fn insert_tvshow(
+    &self,
+    title: &str,
+    year: Option<i32>,
+    overview: Option<&str>,
+    poster_path: Option<&str>,
+    folder_path: &str,
+    tmdb_id: Option<&str>,
+) -> Result<i64> {
+    self.conn.execute(
+        "INSERT INTO media (title, year, overview, poster_path, file_path, media_type, tmdb_id) 
+         VALUES (?, ?, ?, ?, ?, 'tvshow', ?)",
+        params![title, year, overview, poster_path, folder_path, tmdb_id],
+    )?;
+    Ok(self.conn.last_insert_rowid())
+}
+```
+
+**Virtual Folder Path:**
+```rust
+// media_manager.rs:382
+let virtual_folder = format!("tvshow://{}/{}",
+    series_tmdb_id.as_deref().unwrap_or("unknown"),
+    series_title.to_lowercase().replace(' ', "_")
+);
+```
+
+Example: `tvshow://1396/breaking_bad`
+
+### Linking Episodes
+
+```rust
+// database.rs:1066
+pub fn insert_episode_with_metadata(
+    &self,
+    title: &str,              // "S01E01"
+    file_path: &str,
+    parent_id: i64,           // Link to tvshow
+    season: i32,
+    episode: i32,
+    duration: f64,
+    episode_title: Option<&str>,  // "Pilot"
+    overview: Option<&str>,
+    still_path: Option<&str>,
+) -> Result<i64> {
+    self.conn.execute(
+        "INSERT INTO media (title, file_path, media_type, parent_id, season_number, episode_number, duration_seconds, episode_title, overview, still_path)
+         VALUES (?, ?, 'tvepisode', ?, ?, ?, ?, ?, ?, ?)",
+        params![title, file_path, parent_id, season, episode, duration, episode_title, overview, still_path],
+    )?;
+    Ok(self.conn.last_insert_rowid())
+}
+```
+
+### Fetching Episodes
+
+```rust
+// database.rs:419
+pub fn get_episodes(&self, series_id: i64) -> Result<Vec<MediaItem>> {
+    let mut stmt = self.conn.prepare(
+        "SELECT id, title, year, overview, poster_path, file_path, media_type,
+                duration_seconds, resume_position_seconds, last_watched,
+                season_number, episode_number, parent_id, tmdb_id, episode_title, still_path,
+                is_cloud, cloud_file_id
+         FROM media WHERE parent_id = ? ORDER BY season_number, episode_number",
+    )?;
+    
+    stmt.query_map(params![series_id], Self::map_media_item)?;
+}
+```
+
+**Ordering:**
+- Episodes sorted by season first, then episode number
+- Season 1 Episode 1 comes before Season 1 Episode 2
+- Season 1 comes before Season 2
+
+## Season/Episode Organization
+
+Episodes are organized hierarchically:
+
+```
+TV Show (id: 1)
+├── Season 1
+│   ├── S01E01 (parent_id: 1, season: 1, episode: 1)
+│   ├── S01E02 (parent_id: 1, season: 1, episode: 2)
+│   └── S01E03 (parent_id: 1, season: 1, episode: 3)
+└── Season 2
+    ├── S02E01 (parent_id: 1, season: 2, episode: 1)
+    └── S02E02 (parent_id: 1, season: 2, episode: 2)
+```
+
+### Episode Metadata Cache
+
+Episode metadata is pre-fetched from TMDB and cached:
+
+```sql
+-- database.rs:251
+CREATE TABLE cached_episode_metadata (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    series_tmdb_id TEXT NOT NULL,
+    season_number INTEGER NOT NULL,
+    episode_number INTEGER NOT NULL,
+    episode_title TEXT,
+    overview TEXT,
+    still_path TEXT,
+    air_date TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(series_tmdb_id, season_number, episode_number)
+);
+```
+
+### Caching Episode Metadata
+
+```rust
+// database.rs:1350
+pub fn save_cached_episode_metadata(
+    &self,
+    series_tmdb_id: &str,
+    season_number: i32,
+    episode_number: i32,
+    episode_title: Option<&str>,
+    overview: Option<&str>,
+    still_path: Option<&str>,
+    air_date: Option<&str>,
+) -> Result<()> {
+    self.conn.execute(
+        "INSERT OR REPLACE INTO cached_episode_metadata
+         (series_tmdb_id, season_number, episode_number, episode_title, overview, still_path, air_date, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))",
+        params![series_tmdb_id, season_number, episode_number, episode_title, overview, still_path, air_date],
+    )?;
+    Ok(())
+}
+```
+
+**Benefits:**
+- Faster episode browsing (no repeated TMDB calls)
+- Offline metadata access
+- Episode thumbnails pre-downloaded
+
+## Duplicate Detection
+
+StreamVault prevents duplicate entries using unique file path constraints.
+
+### Unique Constraint
+
+```sql
+file_path TEXT NOT NULL UNIQUE
+```
+
+Attempting to insert a duplicate returns an error:
+
+```rust
+// database.rs:757
+pub fn media_exists(&self, file_path: &str) -> Result<bool> {
+    let mut stmt = self.conn.prepare("SELECT id FROM media WHERE file_path = ?")?;
+    let exists = stmt.exists(params![file_path])?;
+    Ok(exists)
+}
+```
+
+### Cloud File Duplicate Check
+
+```rust
+// database.rs:1167
+pub fn cloud_file_exists(&self, cloud_file_id: &str) -> bool {
+    self.conn.query_row(
+        "SELECT 1 FROM media WHERE cloud_file_id = ?",
+        params![cloud_file_id],
+        |_| Ok(()),
+    ).is_ok()
+}
+```
+
+**During cloud sync:**
+```rust
+if db.cloud_file_exists(&file.id) {
+    println!("[GDRIVE] Skipping already indexed file: {}", file.name);
+    continue;
+}
+```
+
+## Orphan Cleanup
+
+StreamVault detects and removes orphaned media entries when files are deleted.
+
+### Orphan Detection
+
+```rust
+// media_manager.rs:60
+pub fn cleanup_orphaned_media(db: &Database, image_cache_dir: &str) -> usize {
+    let all_media = db.get_all_media()?;
+    let mut removed_count = 0;
+    
+    for item in all_media {
+        // SKIP CLOUD ENTRIES - they don't have local files
+        if item.is_cloud.unwrap_or(false) {
+            continue;
+        }
+        
+        if let Some(ref file_path) = item.file_path {
+            let should_remove = if item.media_type == "tvshow" {
+                // Check if TV show has episodes
+                match db.get_episodes(item.id) {
+                    Ok(episodes) => episodes.is_empty(),
+                    Err(_) => true,
+                }
+            } else {
+                // Check if file exists
+                let path = Path::new(file_path);
+                !path.is_file()
+            };
+            
+            if should_remove {
+                db.remove_media(item.id)?;
+                removed_count += 1;
+            }
+        }
+    }
+    
+    removed_count
+}
+```
+
+### Empty Series Cleanup
+
+```rust
+// database.rs:836
+pub fn cleanup_empty_series(&self) -> Result<Vec<(i64, Option<String>)>> {
+    // Find tvshows with no episodes
+    let mut stmt = self.conn.prepare(
+        "SELECT m.id, m.poster_path FROM media m
+         WHERE m.media_type = 'tvshow'
+         AND NOT EXISTS (SELECT 1 FROM media e WHERE e.parent_id = m.id)",
+    )?;
+    
+    let empty_series: Vec<(i64, Option<String>)> = stmt
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
+    
+    // Delete empty series
+    for (id, _) in &empty_series {
+        self.conn.execute("DELETE FROM media WHERE id = ?", params![id])?;
+    }
+    
+    Ok(empty_series)
+}
+```
+
+### Image Cleanup
+
+```rust
+// media_manager.rs:163
+fn cleanup_image_directory(
+    base_dir: &str,
+    used_paths: &std::collections::HashSet<String>,
+    sub_path: &str,
+) {
+    if let Ok(entries) = std::fs::read_dir(&full_path) {
+        for entry in entries {
+            if entry.is_file() {
+                let db_path = format!("image_cache/{}/{}", sub_path, entry_name);
+                
+                // Delete if not in use
+                if !used_paths.contains(&db_path) {
+                    std::fs::remove_file(entry.path())?;
+                }
+            }
+        }
+    }
+}
+```
+
+**Orphaned images are removed when:**
+- No media entry references them
+- Parent TV show is deleted
+- Manual cleanup is triggered
+
+## Cloud Storage Integration
+
+Cloud media is stored in the same table with special flags.
+
+### Cloud Folder Management
+
+```sql
+-- database.rs:303
+CREATE TABLE cloud_folders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    folder_id TEXT NOT NULL UNIQUE,
+    folder_name TEXT NOT NULL,
+    auto_scan INTEGER DEFAULT 1,
+    last_scanned TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    changes_page_token TEXT
+);
+```
+
+### Adding Cloud Media
+
+```rust
+// database.rs:1103
+pub fn insert_cloud_movie(
+    &self,
+    title: &str,
+    year: Option<i32>,
+    overview: Option<&str>,
+    poster_path: Option<&str>,
+    file_name: &str,
+    cloud_file_id: &str,
+    cloud_folder_id: &str,
+    tmdb_id: Option<&str>,
+) -> Result<i64> {
+    self.conn.execute(
+        "INSERT INTO media (title, year, overview, poster_path, file_path, media_type, tmdb_id, is_cloud, cloud_file_id, cloud_folder_id)
+         VALUES (?, ?, ?, ?, ?, 'movie', ?, 1, ?, ?)",
+        params![title, year, overview, poster_path, file_name, tmdb_id, cloud_file_id, cloud_folder_id],
+    )?;
+    Ok(self.conn.last_insert_rowid())
+}
+```
+
+### Filtering by Source
+
+```rust
+// database.rs:376
+pub fn get_library_filtered(
+    &self,
+    media_type: &str,
+    search: Option<&str>,
+    is_cloud: Option<bool>,
+) -> Result<Vec<MediaItem>> {
+    let mut sql = String::from(
+        "SELECT * FROM media WHERE media_type = ?"
+    );
+    
+    if let Some(cloud) = is_cloud {
+        if cloud {
+            sql.push_str(" AND is_cloud = 1");
+        } else {
+            sql.push_str(" AND (is_cloud = 0 OR is_cloud IS NULL)");
+        }
+    }
+}
+```
+
+## App Settings Storage
+
+Global settings are stored in a separate table.
+
+### Settings Table
+
+```sql
+-- database.rs:324
+CREATE TABLE app_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+### Storing Settings
+
+```rust
+// database.rs:1279
+pub fn set_setting(&self, key: &str, value: &str) -> Result<()> {
+    self.conn.execute(
+        "INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)",
+        params![key, value],
+    )?;
+    Ok(())
+}
+```
+
+**Example settings:**
+- `gdrive_changes_token` - Google Drive sync state
+- `last_scan_time` - Last library scan timestamp
+- `user_preferences` - JSON blob of user preferences
+
+## Database Location
+
+```rust
+// database.rs:29
+pub fn get_database_path() -> String {
+    get_app_data_dir()
+        .join("media_library.db")
+        .to_string_lossy()
+        .to_string()
+}
+```
+
+**Default path:**
+- Windows: `%APPDATA%/StreamVault/media_library.db`
+- Linux: `~/.StreamVault/media_library.db`
+- macOS: `~/Library/Application Support/StreamVault/media_library.db`
+
+**Dev builds use:**
+- `%APPDATA%/StreamVault-Dev/media_library.db`
+
+This keeps production and development data isolated.
+
+## Performance Optimizations
+
+### Indexes
+
+```sql
+-- Automatically created by UNIQUE constraint
+CREATE UNIQUE INDEX idx_file_path ON media(file_path);
+
+-- Foreign key for episode lookups
+CREATE INDEX idx_parent_id ON media(parent_id);
+
+-- Cloud file lookups
+CREATE INDEX idx_cloud_file_id ON media(cloud_file_id);
+```
+
+### Cascading Deletes
+
+```sql
+FOREIGN KEY (parent_id) REFERENCES media (id) ON DELETE CASCADE
+```
+
+When a TV show is deleted, all episodes are automatically removed.
+
+## Troubleshooting
+
+### "Duplicate episodes appearing"
+
+1. Check for different file paths to the same episode
+2. Run orphan cleanup to remove duplicates
+3. Use Fix Match to consolidate under correct series
+
+### "TV show not grouping episodes"
+
+1. Ensure filenames have consistent naming (e.g., all use S01E01 format)
+2. Check that series title matches across episodes
+3. Use Fix Match on the series to set correct TMDB ID
+
+### "Database corruption"
+
+1. Close StreamVault completely
+2. Backup `media_library.db`
+3. Run SQLite integrity check: `sqlite3 media_library.db "PRAGMA integrity_check;"`
+4. If corrupted, restore from backup or re-scan library

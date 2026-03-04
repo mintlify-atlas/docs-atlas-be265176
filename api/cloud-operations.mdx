@@ -1,0 +1,589 @@
+---
+title: "Cloud Operations"
+description: "Google Drive integration APIs for cloud library management"
+---
+
+## Google Drive Authentication
+
+### OAuth Flow
+
+StreamVault uses OAuth 2.0 for secure Google Drive authentication.
+
+```typescript src/services/api.ts
+// Start OAuth flow (opens browser)
+export const gdrive_start_auth = async (): Promise<string>
+
+// Complete authentication (waits for callback)
+export const gdrive_complete_auth = async (): Promise<DriveAccountInfo>
+
+// Disconnect from Google Drive
+export const gdrive_disconnect = async (): Promise<{ message: string }>
+```
+
+### DriveAccountInfo Interface
+
+```typescript src/services/api.ts
+export interface DriveAccountInfo {
+    email: string;
+    display_name: string | null;
+    photo_url: string | null;
+    storage_used: number | null;
+    storage_limit: number | null;
+}
+```
+
+<ResponseField name="email" type="string">
+  Google account email address
+</ResponseField>
+
+<ResponseField name="display_name" type="string | null">
+  User's display name from Google profile
+</ResponseField>
+
+<ResponseField name="photo_url" type="string | null">
+  Profile photo URL
+</ResponseField>
+
+<ResponseField name="storage_used" type="number | null">
+  Storage used in bytes
+</ResponseField>
+
+<ResponseField name="storage_limit" type="number | null">
+  Total storage quota in bytes
+</ResponseField>
+
+### OAuth Example
+
+```typescript
+import {
+  gdrive_start_auth,
+  gdrive_complete_auth,
+  type DriveAccountInfo
+} from '@/services/api';
+
+async function connectGoogleDrive() {
+  try {
+    // Step 1: Open browser for authentication
+    const authUrl = await gdrive_start_auth();
+    console.log('Auth URL opened:', authUrl);
+
+    // Step 2: Wait for user to complete OAuth flow
+    // Backend receives callback and exchanges code for tokens
+    const accountInfo = await gdrive_complete_auth();
+
+    console.log(`Connected as: ${accountInfo.email}`);
+    console.log(`Display name: ${accountInfo.display_name}`);
+    
+    if (accountInfo.storage_used && accountInfo.storage_limit) {
+      const usedGB = (accountInfo.storage_used / 1e9).toFixed(2);
+      const limitGB = (accountInfo.storage_limit / 1e9).toFixed(2);
+      console.log(`Storage: ${usedGB}GB / ${limitGB}GB`);
+    }
+
+    return accountInfo;
+  } catch (error) {
+    console.error('Failed to connect Google Drive:', error);
+    throw error;
+  }
+}
+```
+
+### Backend OAuth Implementation
+
+```rust src-tauri/src/gdrive.rs
+// Start OAuth flow - returns auth URL
+pub fn get_auth_url() -> String {
+    format!(
+        "https://streamvault-backend-server.onrender.com/auth/google?redirect_uri={}",
+        "http://localhost:18234/callback"
+    )
+}
+
+// Wait for OAuth callback (listens on localhost:18234)
+pub async fn wait_for_oauth_callback() -> Result<GoogleTokens, String> {
+    let listener = TcpListener::bind("127.0.0.1:18234")
+        .map_err(|e| format!("Failed to bind: {}", e))?;
+    
+    // Accept connection and parse tokens
+    // ...
+}
+```
+
+## Connection Status
+
+Check if authenticated to Google Drive.
+
+```typescript src/services/api.ts
+export const isGdriveConnected = async (): Promise<boolean>
+
+export const getGdriveAccountInfo = async (): Promise<DriveAccountInfo | null>
+```
+
+### Example Usage
+
+```typescript
+import { isGdriveConnected, getGdriveAccountInfo } from '@/services/api';
+
+const connected = await isGdriveConnected();
+
+if (connected) {
+  const account = await getGdriveAccountInfo();
+  console.log(`Logged in as: ${account?.email}`);
+} else {
+  console.log('Not connected to Google Drive');
+  // Show connect button
+}
+```
+
+## Folder Management
+
+Track and scan Google Drive folders.
+
+### Cloud Folder Interface
+
+```typescript
+interface CloudFolder {
+  id: string;           // Google Drive folder ID
+  name: string;         // Folder name
+  auto_scan: boolean;   // Auto-scan on startup
+}
+```
+
+### Add Cloud Folder
+
+```typescript src/services/api.ts
+export const addCloudFolder = async (
+  folderId: string,
+  folderName: string
+): Promise<{ message: string }>
+```
+
+<ParamField path="folderId" type="string" required>
+  Google Drive folder ID
+</ParamField>
+
+<ParamField path="folderName" type="string" required>
+  Display name for the folder
+</ParamField>
+
+### Remove Cloud Folder
+
+```typescript src/services/api.ts
+export const removeCloudFolder = async (
+  folderId: string
+): Promise<{ message: string }>
+```
+
+<ParamField path="folderId" type="string" required>
+  Google Drive folder ID to remove
+</ParamField>
+
+<Warning>
+  Removing a cloud folder also deletes all indexed media from that folder in the library.
+</Warning>
+
+### Get Cloud Folders
+
+```typescript src/services/api.ts
+export const getCloudFolders = async (): Promise<CloudFolder[]>
+```
+
+### Example Usage
+
+```typescript
+import {
+  getCloudFolders,
+  addCloudFolder,
+  removeCloudFolder
+} from '@/services/api';
+
+// List tracked folders
+const folders = await getCloudFolders();
+folders.forEach(folder => {
+  console.log(`${folder.name} (${folder.id})`);
+  console.log(`Auto-scan: ${folder.auto_scan}`);
+});
+
+// Add new folder
+await addCloudFolder('1abc...xyz', 'My Movies');
+
+// Remove folder
+await removeCloudFolder('1abc...xyz');
+```
+
+## Browse Google Drive
+
+### List Folders
+
+```typescript src/services/api.ts
+export interface DriveItem {
+    id: string;
+    name: string;
+    mime_type: string;
+    size?: string;
+    modified_time?: string;
+    parents?: string[];
+    web_content_link?: string;
+}
+
+export const gdrive_list_folders = async (
+  parentId?: string
+): Promise<DriveItem[]>
+```
+
+<ParamField path="parentId" type="string">
+  Parent folder ID (omit for root folder)
+</ParamField>
+
+### List Files
+
+```typescript src/services/api.ts
+export interface DriveListResponse {
+    files: DriveItem[];
+    next_page_token?: string;
+}
+
+export const gdrive_list_files = async (
+  folderId?: string
+): Promise<DriveListResponse>
+```
+
+### Example: Folder Browser
+
+```typescript
+import { gdrive_list_folders, gdrive_list_files } from '@/services/api';
+
+function FolderBrowser() {
+  const [currentFolder, setCurrentFolder] = useState<string | undefined>();
+  const [folders, setFolders] = useState<DriveItem[]>([]);
+  const [files, setFiles] = useState<DriveItem[]>([]);
+
+  useEffect(() => {
+    async function loadFolder() {
+      const [folderItems, fileItems] = await Promise.all([
+        gdrive_list_folders(currentFolder),
+        gdrive_list_files(currentFolder)
+      ]);
+      
+      setFolders(folderItems);
+      setFiles(fileItems.files);
+    }
+    loadFolder();
+  }, [currentFolder]);
+
+  return (
+    <div>
+      <h3>Folders</h3>
+      {folders.map(folder => (
+        <div key={folder.id} onClick={() => setCurrentFolder(folder.id)}>
+          📁 {folder.name}
+        </div>
+      ))}
+      
+      <h3>Files</h3>
+      {files.map(file => (
+        <div key={file.id}>
+          📄 {file.name}
+        </div>
+      ))}
+    </div>
+  );
+}
+```
+
+## Scan Cloud Library
+
+Index video files from Google Drive folders.
+
+```typescript src/services/api.ts
+export interface CloudIndexResult {
+    success: boolean;
+    indexed_count: number;
+    skipped_count: number;
+    movies_count: number;
+    tv_count: number;
+    message: string;
+}
+
+export const gdrive_scan_folder = async (
+  folderId: string,
+  folderName: string
+): Promise<CloudIndexResult>
+
+export const scanAllCloudFolders = async (): Promise<CloudIndexResult>
+```
+
+### Scan Behavior
+
+1. **Auto-detection**: Filenames are parsed to detect movies vs TV episodes
+2. **TMDB Matching**: Searches TMDB for metadata
+3. **Duplicate Detection**: Skips files already in library
+4. **Episode Grouping**: Groups episodes under parent TV show
+
+### Example Usage
+
+```typescript
+import { gdrive_scan_folder, scanAllCloudFolders } from '@/services/api';
+
+// Scan specific folder
+const result = await gdrive_scan_folder('1abc...xyz', 'Movies');
+
+console.log(result.message);
+console.log(`Indexed: ${result.indexed_count}`);
+console.log(`Movies: ${result.movies_count}`);
+console.log(`TV Episodes: ${result.tv_count}`);
+console.log(`Skipped (already indexed): ${result.skipped_count}`);
+
+// Scan all tracked folders
+const allResults = await scanAllCloudFolders();
+console.log(`Total indexed: ${allResults.indexed_count}`);
+```
+
+### Backend Implementation
+
+```rust src-tauri/src/main.rs
+#[tauri::command]
+async fn gdrive_scan_folder(
+    state: State<'_, AppState>,
+    window: Window,
+    folder_id: String,
+    folder_name: String,
+) -> Result<CloudIndexResult, String> {
+    // Get video files from folder
+    let files = state.gdrive_client.list_video_files(&folder_id, true).await?;
+    
+    // Parse filenames and fetch TMDB metadata
+    // Insert into database with is_cloud=1
+    // ...
+}
+```
+
+## Cloud Streaming
+
+Get streaming URLs for cloud files.
+
+```typescript src/services/api.ts
+export const gdrive_get_stream_url = async (
+  fileId: string
+): Promise<[string, string]>
+```
+
+<ParamField path="fileId" type="string" required>
+  Google Drive file ID
+</ParamField>
+
+<ResponseField name="streamUrl" type="string">
+  Direct streaming URL
+</ResponseField>
+
+<ResponseField name="accessToken" type="string">
+  Access token for authorization
+</ResponseField>
+
+### Example Usage
+
+```typescript
+import { gdrive_get_stream_url } from '@/services/api';
+
+async function playCloudVideo(cloudFileId: string) {
+  const [streamUrl, accessToken] = await gdrive_get_stream_url(cloudFileId);
+
+  // Use with video player
+  videoPlayer.src = streamUrl;
+  
+  // Include token in requests if needed
+  fetch(streamUrl, {
+    headers: {
+      'Authorization': `Bearer ${accessToken}`
+    }
+  });
+}
+```
+
+## Cloud File Metadata
+
+```typescript src/services/api.ts
+export const gdrive_get_file_metadata = async (
+  fileId: string
+): Promise<DriveItem>
+```
+
+<ParamField path="fileId" type="string" required>
+  Google Drive file ID
+</ParamField>
+
+### Example Usage
+
+```typescript
+import { gdrive_get_file_metadata } from '@/services/api';
+
+const metadata = await gdrive_get_file_metadata(fileId);
+
+console.log(`Name: ${metadata.name}`);
+console.log(`Size: ${metadata.size} bytes`);
+console.log(`Modified: ${metadata.modified_time}`);
+console.log(`MIME type: ${metadata.mime_type}`);
+```
+
+## Video File Filtering
+
+List only video files in a folder.
+
+```typescript src/services/api.ts
+export const gdrive_list_video_files = async (
+  folderId: string,
+  recursive: boolean
+): Promise<DriveItem[]>
+```
+
+<ParamField path="folderId" type="string" required>
+  Google Drive folder ID
+</ParamField>
+
+<ParamField path="recursive" type="boolean" required>
+  Whether to scan subfolders
+</ParamField>
+
+### Supported Video Formats
+
+- MP4 (`video/mp4`)
+- MKV (`video/x-matroska`)
+- AVI (`video/avi`)
+- MOV (`video/quicktime`)
+- WebM (`video/webm`)
+- M4V (`video/x-m4v`)
+- WMV (`video/x-ms-wmv`)
+- FLV (`video/x-flv`)
+- TS (`video/mp2t`)
+
+### Example Usage
+
+```typescript
+import { gdrive_list_video_files } from '@/services/api';
+
+// Get videos from folder only
+const videos = await gdrive_list_video_files(folderId, false);
+
+// Get videos from folder and all subfolders
+const allVideos = await gdrive_list_video_files(folderId, true);
+
+console.log(`Found ${allVideos.length} video files`);
+```
+
+## Cloud Cache Management
+
+Manage cached cloud files for offline playback.
+
+```typescript src/services/api.ts
+export interface CloudCacheInfo {
+    enabled: boolean;
+    cache_dir: string | null;
+    total_size_bytes: number;
+    total_size_mb: number;
+    file_count: number;
+    max_size_mb: number;
+    expiry_hours: number;
+}
+
+export const getCloudCacheInfo = async (): Promise<CloudCacheInfo>
+
+export const cleanupCloudCache = async (): Promise<{ message: string }>
+
+export const clearCloudCache = async (): Promise<{ message: string }>
+```
+
+### Example Usage
+
+```typescript
+import {
+  getCloudCacheInfo,
+  cleanupCloudCache,
+  clearCloudCache
+} from '@/services/api';
+
+// Get cache statistics
+const cache = await getCloudCacheInfo();
+
+console.log(`Cache enabled: ${cache.enabled}`);
+console.log(`Cache size: ${cache.total_size_mb} MB`);
+console.log(`Files cached: ${cache.file_count}`);
+console.log(`Max size: ${cache.max_size_mb} MB`);
+
+// Clean expired cache files
+const cleanupResult = await cleanupCloudCache();
+console.log(cleanupResult.message);
+
+// Clear all cache
+const clearResult = await clearCloudCache();
+console.log(clearResult.message);
+```
+
+## Events
+
+Listen for cloud scan events.
+
+```typescript
+import { listen } from '@tauri-apps/api/event';
+
+// Cloud scan started
+await listen('cloud-indexing-started', (event) => {
+  const { count } = event.payload;
+  console.log(`Indexing ${count} files...`);
+});
+
+// Cloud scan completed
+await listen('cloud-scan-complete', (event) => {
+  const { indexed, movies, tv, skipped } = event.payload;
+  console.log(`Scan complete: ${indexed} new items`);
+  console.log(`Movies: ${movies}, TV: ${tv}`);
+  console.log(`Skipped: ${skipped}`);
+  
+  // Refresh library UI
+  refreshLibrary();
+});
+```
+
+## Backend Architecture
+
+### Token Management
+
+```rust src-tauri/src/gdrive.rs
+pub struct GoogleDriveClient {
+    tokens: Arc<Mutex<Option<GoogleTokens>>>,
+    http_client: reqwest::Client,
+}
+
+impl GoogleDriveClient {
+    pub async fn get_access_token(&self) -> Result<String, String> {
+        // Check if token is expired
+        // Refresh if needed
+        // Return valid access token
+    }
+}
+```
+
+### API Requests
+
+```rust src-tauri/src/gdrive.rs
+pub async fn list_files(
+    &self,
+    folder_id: Option<&str>,
+    page_token: Option<&str>,
+) -> Result<DriveListResponse, String> {
+    let access_token = self.get_access_token().await?;
+    
+    let url = format!(
+        "{}/files?q={}&fields=files(...),nextPageToken",
+        DRIVE_API_BASE,
+        query
+    );
+    
+    let response = self.http_client
+        .get(&url)
+        .header("Authorization", format!("Bearer {}", access_token))
+        .send()
+        .await?;
+    
+    response.json().await
+}
+```

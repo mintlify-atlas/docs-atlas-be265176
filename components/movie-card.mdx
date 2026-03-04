@@ -1,0 +1,309 @@
+---
+title: 'MovieCard'
+description: 'Display movies and TV shows with posters, metadata, and interactive features'
+icon: 'image'
+---
+
+## Overview
+
+The `MovieCard` component is the primary card display for movies and TV shows in StreamVault. It features poster images, metadata overlays, progress tracking, hover animations, and a context menu for actions.
+
+<img
+  src="/images/components/movie-card.png"
+  alt="MovieCard showing a movie poster with hover play button and progress bar"
+  className="rounded-lg"
+/>
+
+## Features
+
+- **Poster Display**: Shows movie/TV show posters with fallback placeholders
+- **Progress Tracking**: Visual progress bar and resume indicator
+- **Hover Effects**: Smooth animations with glow effects and play button overlay
+- **Context Menu**: Right-click menu for Play, Fix Match, Watch Together, Delete, and more
+- **Status Badges**: "Watched" badge for completed content, progress percentage for in-progress items
+- **Optimized Performance**: Memoized with custom comparison function to prevent unnecessary re-renders
+- **Cloud Integration**: AI chat button for cloud-hosted content
+
+## Component Interface
+
+```typescript
+export interface MovieCardProps {
+  item: MediaItem
+  onClick: (item: MediaItem) => void
+  onFixMatch: (item: MediaItem) => void
+  onRemoveFromHistory?: (item: MediaItem) => void
+  onDelete?: (item: MediaItem) => void
+  onWatchTogether?: (item: MediaItem) => void
+  onAskAI?: (item: MediaItem) => void
+  disableEntryAnimation?: boolean
+  aspectRatio?: "portrait" | "square"
+  className?: string
+  index?: number
+}
+```
+
+### Props
+
+<ParamField path="item" type="MediaItem" required>
+  The media item to display (movie or TV show)
+</ParamField>
+
+<ParamField path="onClick" type="(item: MediaItem) => void" required>
+  Callback when the card is clicked to play the media
+</ParamField>
+
+<ParamField path="onFixMatch" type="(item: MediaItem) => void" required>
+  Callback to fix metadata matching for incorrect matches
+</ParamField>
+
+<ParamField path="onRemoveFromHistory" type="(item: MediaItem) => void">
+  Optional callback to remove item from watch history
+</ParamField>
+
+<ParamField path="onDelete" type="(item: MediaItem) => void">
+  Optional callback to delete the media file from cloud storage
+</ParamField>
+
+<ParamField path="onWatchTogether" type="(item: MediaItem) => void">
+  Optional callback to start a Watch Together session (beta feature)
+</ParamField>
+
+<ParamField path="onAskAI" type="(item: MediaItem) => void">
+  Optional callback to open AI chat for this media (cloud items only)
+</ParamField>
+
+<ParamField path="disableEntryAnimation" type="boolean" default="false">
+  Disable the staggered entry animation when cards first appear
+</ParamField>
+
+<ParamField path="aspectRatio" type="portrait | square" default="portrait">
+  Aspect ratio of the poster container
+</ParamField>
+
+<ParamField path="className" type="string">
+  Additional CSS classes to apply to the card container
+</ParamField>
+
+<ParamField path="index" type="number" default="0">
+  Card index for staggered animation delay calculation
+</ParamField>
+
+## MediaItem Interface
+
+```typescript
+interface MediaItem {
+  id: number
+  title: string
+  poster_path?: string
+  progress_percent?: number
+  resume_position_seconds?: number
+  duration_seconds?: number
+  media_type: 'movie' | 'tvshow' | 'tvepisode'
+  is_cloud?: boolean
+  season_number?: number
+  episode_number?: number
+  year?: number
+  overview?: string
+}
+```
+
+## Usage Examples
+
+### Basic Movie Grid
+
+```tsx
+import { MovieCard } from '@/components/MovieCard'
+import { MediaItem } from '@/services/api'
+
+function MovieGrid({ movies }: { movies: MediaItem[] }) {
+  const handlePlay = (item: MediaItem) => {
+    // Start playback
+  }
+
+  const handleFixMatch = (item: MediaItem) => {
+    // Open Fix Match dialog
+  }
+
+  return (
+    <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-6">
+      {movies.map((movie, index) => (
+        <MovieCard
+          key={movie.id}
+          item={movie}
+          onClick={handlePlay}
+          onFixMatch={handleFixMatch}
+          index={index}
+        />
+      ))}
+    </div>
+  )
+}
+```
+
+### With All Features (Cloud Library)
+
+```tsx
+import { MovieCard } from '@/components/MovieCard'
+
+function CloudLibrary({ items }: { items: MediaItem[] }) {
+  return (
+    <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-6">
+      {items.map((item, index) => (
+        <MovieCard
+          key={item.id}
+          item={item}
+          onClick={(item) => playMedia(item.id)}
+          onFixMatch={(item) => openFixMatchDialog(item)}
+          onDelete={(item) => deleteFromDrive(item.id)}
+          onAskAI={(item) => openAIChat(item)}
+          onWatchTogether={(item) => createWatchParty(item)}
+          index={index}
+        />
+      ))}
+    </div>
+  )
+}
+```
+
+### History View
+
+```tsx
+function HistoryView({ historyItems }: { historyItems: MediaItem[] }) {
+  return (
+    <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-6">
+      {historyItems.map((item, index) => (
+        <MovieCard
+          key={item.id}
+          item={item}
+          onClick={(item) => resumePlayback(item)}
+          onFixMatch={(item) => fixMatch(item)}
+          onRemoveFromHistory={(item) => removeFromHistory(item.id)}
+          index={index}
+        />
+      ))}
+    </div>
+  )
+}
+```
+
+## Visual States
+
+### Progress Tracking
+
+The card automatically displays progress for partially watched content:
+
+- **Progress Badge**: Shows percentage complete (1-94%)
+- **Progress Bar**: White bar at bottom of poster showing progress
+- **Watched Badge**: Gray "Watched" badge for items 95%+ complete
+
+```tsx
+// Progress is calculated automatically from MediaItem
+const progress = item.progress_percent || 
+  (item.resume_position_seconds && item.duration_seconds 
+    ? (item.resume_position_seconds / item.duration_seconds) * 100 
+    : 0)
+```
+
+### Hover Interactions
+
+On hover, the card displays:
+
+1. **Glow effect** behind the card
+2. **Lift animation** (moves up and scales slightly)
+3. **Play button** in center with pulsing glow ring
+4. **Action buttons** in top-right (AI Chat, More options)
+5. **Enhanced border** with white glow
+
+### Context Menu
+
+Right-click opens a context menu with:
+
+- **Play Now** - Start playback immediately
+- **Fix Match** - Correct metadata matching
+- **Ask AI** (cloud only) - Open AI chat about this title
+- **Watch Together** (beta) - Create synchronized watch session
+- **Remove from History** (history view only)
+- **Delete from Drive** (cloud only)
+
+## Performance Optimization
+
+The component uses `React.memo` with a custom comparison function to prevent unnecessary re-renders:
+
+```typescript
+export const MovieCard = memo(MovieCardBase, areMovieCardPropsEqual)
+```
+
+The comparison function checks:
+- Callback prop references (to avoid stale closures)
+- Visual properties (title, poster, progress, etc.)
+- Metadata (season/episode, year, cloud status)
+
+This ensures cards only re-render when their data actually changes.
+
+## Animations
+
+### Entry Animation
+
+Cards animate in with a staggered delay based on their index:
+
+```typescript
+initial={{ opacity: 0, y: 30, scale: 0.95 }}
+animate={{ opacity: 1, y: 0, scale: 1 }}
+transition={{
+  duration: 0.5,
+  delay: index * 0.04,  // 40ms stagger per card
+  ease: [0.22, 1, 0.36, 1]
+}}
+```
+
+Set `disableEntryAnimation={true}` to skip this for dynamic updates.
+
+### Hover Animation
+
+Smooth spring-based animations for hover states using Framer Motion.
+
+## Styling
+
+The card uses Tailwind CSS with custom backdrop blur and shadow effects:
+
+- **Background**: Semi-transparent dark card with backdrop blur
+- **Border**: Subtle white border that intensifies on hover
+- **Shadow**: Elevation increases on hover with glow effect
+- **Typography**: White title with muted metadata text
+
+## Image Loading
+
+Poster images are loaded from the local cache with fallback:
+
+1. Load from `image_cache/` via `getCachedImageUrl()`
+2. Show skeleton shimmer while loading
+3. Fallback to placeholder with title initials if no poster
+
+```typescript
+const imageSrc = posterUrl || 
+  `https://placehold.co/400x600/0a0a0f/1a1a2e?text=${encodeURIComponent(item.title.slice(0, 2))}`
+```
+
+## Accessibility
+
+- Semantic button elements for clickable areas
+- `aria-label` attributes on action buttons
+- `title` attributes for tooltips
+- Keyboard navigation support via context menu
+
+## Related Components
+
+<CardGroup cols={2}>
+  <Card title="ContinueCard" icon="play" href="/components/continue-card">
+    Horizontal card variant for Continue Watching section
+  </Card>
+  <Card title="EpisodeBrowser" icon="tv" href="/components/episode-browser">
+    Browse and play TV show episodes by season
+  </Card>
+</CardGroup>
+
+## Source Code
+
+Location: `~/workspace/source/src/components/MovieCard.tsx`
+
+The component is approximately 640 lines including the `ContinueCard` variant and comparison functions.

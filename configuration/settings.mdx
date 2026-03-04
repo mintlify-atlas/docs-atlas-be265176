@@ -1,0 +1,181 @@
+---
+title: Settings Overview
+description: Understanding StreamVault's configuration structure and settings management
+---
+
+## Configuration File Location
+
+StreamVault stores all configuration in a JSON file located at:
+
+<CodeGroup>
+```text Windows
+%APPDATA%/StreamVault/media_config.json
+```
+
+```text Development
+%APPDATA%/StreamVault-Dev/media_config.json
+```
+</CodeGroup>
+
+<Note>
+The development build uses a separate `StreamVault-Dev` directory to keep data isolated from production.
+</Note>
+
+## Configuration Structure
+
+The configuration file follows this JSON structure (from `config.rs:172-196`):
+
+```json
+{
+  "mpv_path": null,
+  "vlc_path": null,
+  "ffprobe_path": null,
+  "ffmpeg_path": null,
+  "tmdb_api_key": null,
+  "cloud_cache_enabled": false,
+  "cloud_cache_dir": null,
+  "cloud_cache_max_mb": 1024,
+  "cloud_cache_expiry_hours": 24,
+  "cloud_scan_interval_minutes": 5
+}
+```
+
+## Settings Categories
+
+### Player Configuration
+
+<CardGroup cols={2}>
+  <Card title="MPV Path" icon="play">
+    Path to MPV executable for video playback
+  </Card>
+  <Card title="VLC Path" icon="play">
+    (Optional) Path to VLC player
+  </Card>
+</CardGroup>
+
+### API Keys
+
+<Card title="TMDB API Key" icon="key">
+  API key or Access Token for fetching metadata, posters, and streaming search results
+</Card>
+
+### Cloud Cache Settings
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `cloud_cache_enabled` | `false` | Enable disk caching for cloud streaming |
+| `cloud_cache_dir` | `null` | Custom cache directory path |
+| `cloud_cache_max_mb` | `1024` | Maximum cache size per movie (1GB) |
+| `cloud_cache_expiry_hours` | `24` | Auto-cleanup after 24 hours |
+| `cloud_scan_interval_minutes` | `5` | Google Drive change detection interval |
+
+## Accessing Settings
+
+<Steps>
+  <Step title="Open Settings">
+    Click the **Settings** icon in the top-right corner of the app, or press `Ctrl+,`
+  </Step>
+  
+  <Step title="Navigate Sections">
+    Use the sidebar to switch between:
+    - **General** - Player paths and startup options
+    - **Cloud Storage** - Google Drive connection
+    - **API Keys** - TMDB configuration
+    - **Advanced** - Reset and cleanup tools
+  </Step>
+  
+  <Step title="Save Changes">
+    Click **Save** to persist changes to the config file
+  </Step>
+</Steps>
+
+## Default Values
+
+When the config file doesn't exist, StreamVault creates it with these defaults (from `config.rs:210-224`):
+
+```rust
+Config {
+    mpv_path: None,
+    vlc_path: None,
+    ffprobe_path: None,
+    ffmpeg_path: None,
+    tmdb_api_key: None,
+    cloud_cache_enabled: false,
+    cloud_cache_dir: None,
+    cloud_cache_max_mb: 1024,
+    cloud_cache_expiry_hours: 24,
+    cloud_scan_interval_minutes: 5,
+}
+```
+
+## Auto-Detection
+
+### MPV Auto-Discovery
+
+StreamVault automatically searches for MPV in common locations on Windows:
+
+- `C:\Program Files\mpv\mpv.exe`
+- `C:\Program Files (x86)\mpv\mpv.exe`
+- Scoop installations: `%USERPROFILE%\scoop\apps\mpv\`
+- Chocolatey: `C:\ProgramData\chocolatey\bin\mpv.exe`
+- System PATH
+
+See [MPV Player Setup](/configuration/player-setup) for detailed installation instructions.
+
+## Configuration Management
+
+<Warning>
+**Manual Editing**: While you can edit the JSON file directly, it's recommended to use the Settings UI to avoid syntax errors. The app validates and auto-corrects invalid configurations on startup.
+</Warning>
+
+### Loading Configuration
+
+From `config.rs:227-242`:
+
+```rust
+pub fn load_config() -> Result<Config, Box<dyn std::error::Error>> {
+    let config_path = get_config_path();
+    
+    if !std::path::Path::new(&config_path).exists() {
+        let default_config = Config::default();
+        save_config(&default_config)?;
+        return Ok(default_config);
+    }
+    
+    let mut file = fs::File::open(&config_path)?;
+    let mut contents = String::new();
+    file.read_to_string(&mut contents)?;
+    
+    let config: Config = serde_json::from_str(&contents)?;
+    Ok(config)
+}
+```
+
+## Settings Storage Paths
+
+All app data is stored in the same directory (from `database.rs:5-48`):
+
+```text
+%APPDATA%/StreamVault/
+├── media_config.json       # Configuration file
+├── media_library.db        # SQLite database
+├── image_cache/            # Poster and thumbnail cache
+└── mpv_progress/           # MPV playback progress tracking
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="TMDB Setup" icon="key" href="/configuration/tmdb-setup">
+    Configure TMDB API for metadata
+  </Card>
+  <Card title="Google Drive Setup" icon="cloud" href="/configuration/google-drive-setup">
+    Connect cloud storage
+  </Card>
+  <Card title="Player Setup" icon="play" href="/configuration/player-setup">
+    Install and configure MPV
+  </Card>
+  <Card title="Library Management" icon="folders" href="/features/library-management">
+    Start organizing your media
+  </Card>
+</CardGroup>

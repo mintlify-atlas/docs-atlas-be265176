@@ -1,0 +1,250 @@
+---
+title: Keyboard Shortcuts
+description: Complete keyboard shortcuts reference for StreamVault
+---
+
+StreamVault supports keyboard shortcuts for faster navigation and playback control.
+
+## Video Player Shortcuts
+
+These shortcuts work when playing media in the built-in video player or MPV.
+
+### Built-In Browser Player
+
+| Shortcut | Action |
+|----------|--------|
+| `Space` or `K` | Play / Pause |
+| `F` | Toggle fullscreen |
+| `M` | Mute / Unmute |
+| `←` (Left Arrow) | Skip backward 10 seconds |
+| `→` (Right Arrow) | Skip forward 10 seconds |
+| `Esc` | Exit fullscreen (or close player if not fullscreen) |
+
+<Note>
+The built-in player supports MP4, WebM, and M4V files. For other formats like MKV or AVI, use MPV which has its own extensive shortcuts.
+</Note>
+
+### MPV Player Shortcuts
+
+When using MPV (external player), these shortcuts are available:
+
+| Shortcut | Action |
+|----------|--------|
+| `Space` | Play / Pause |
+| `←` `→` | Seek backward/forward 5 seconds |
+| `Shift+←` `Shift+→` | Seek backward/forward 1 minute |
+| `↑` `↓` | Volume up/down |
+| `M` | Mute / Unmute |
+| `F` | Toggle fullscreen |
+| `9` `0` | Volume down/up |
+| `[` `]` | Decrease/increase playback speed |
+| `{` `}` | Halve/double playback speed |
+| `Backspace` | Reset playback speed to normal |
+| `S` | Take screenshot |
+| `Shift+S` | Take screenshot without subtitles |
+| `J` | Cycle subtitle tracks |
+| `#` | Cycle audio tracks |
+| `O` | Show progress bar |
+| `I` | Show stats |
+| `Q` | Quit and save position |
+
+<Tip>
+MPV has many more shortcuts. Press `Shift+I` during playback to see stats and keybindings, or check the [MPV manual](https://mpv.io/manual/stable/).
+</Tip>
+
+## Resume Dialog Shortcuts
+
+When the "Resume Playback" dialog appears:
+
+| Shortcut | Action |
+|----------|--------|
+| `Enter` or `R` | Resume from last position |
+| `S` | Start over from beginning |
+| `Esc` | Cancel (close dialog) |
+
+## Navigation Shortcuts
+
+### Search
+
+| Shortcut | Action |
+|----------|--------|
+| Click search input | Start typing to filter current view |
+| `Esc` (in search) | Clear search query |
+
+<Tip>
+**Home View Search**: Searches across your entire library (local and cloud, movies and TV).
+
+**Cloud View Search**: Filters the current tab (Movies or TV Shows).
+</Tip>
+
+### General Navigation
+
+| Shortcut | Action |
+|----------|--------|
+| `Esc` | Close modals and dialogs |
+
+Episode selector, settings modal, fix match modal, and other dialogs can be closed with `Esc`.
+
+## Context Menu Actions
+
+Right-click media cards for quick actions:
+
+| Action | Description |
+|--------|-------------|
+| **Play** | Start playback with MPV |
+| **Play with Browser** | Use built-in video player (MP4/WebM only) |
+| **Resume** | Continue from last watched position |
+| **Fix Match** | Correct TMDB metadata match |
+| **Mark as Watched** | Mark media as completed |
+| **Delete** | Remove from library (and optionally from Google Drive) |
+
+## Streaming Player Shortcuts
+
+When using the Videasy streaming player:
+
+| Shortcut | Action |
+|----------|--------|
+| `Esc` | Close player and return to search |
+
+<Note>
+Videasy is an embedded player for external streaming sources. Playback controls depend on the player implementation.
+</Note>
+
+## Episode Selector Shortcuts
+
+When browsing episodes in a TV series:
+
+| Shortcut | Action |
+|----------|--------|
+| `Esc` | Close episode browser |
+| Click episode card | Play episode |
+| Click info icon | Expand episode details |
+
+## AI Chat Shortcuts
+
+In the AI chat interface:
+
+| Shortcut | Action |
+|----------|--------|
+| `Enter` | Send message |
+| `Shift+Enter` | New line in message |
+| `@` | Link content or create TMDB profile |
+
+<Tip>
+The AI chat supports **@mentions** for linking media titles and creating TMDB deep profiles with cast, crew, and recommendations.
+</Tip>
+
+## Tips for Efficient Usage
+
+### Quick Play Workflow
+
+1. Navigate to **Cloud** or **History** view
+2. Type in search bar to filter media
+3. Click or right-click desired item
+4. Use `Resume` to continue or `Play` to start over
+5. Press `Space` during playback to pause
+
+### Batch Operations
+
+For managing multiple files:
+
+- **Delete entire series**: Right-click series card → Delete → Confirm
+- **Clear watch history**: History view → Clear All button
+- **Re-index library**: Sidebar → Update Library button
+
+### Customizing MPV Shortcuts
+
+MPV shortcuts can be customized by creating an `input.conf` file:
+
+1. Locate MPV config directory:
+   - **Windows**: `%APPDATA%/mpv/`
+   - **Linux**: `~/.config/mpv/`
+   - **macOS**: `~/.config/mpv/`
+
+2. Create `input.conf` and add custom bindings:
+
+```bash
+# Example custom shortcuts
+Ctrl+LEFT seek -60  # Ctrl+Left: skip back 1 minute
+Ctrl+RIGHT seek 60  # Ctrl+Right: skip forward 1 minute
+q quit-watch-later  # Q: quit and save position
+```
+
+3. Restart MPV for changes to take effect
+
+<Note>
+See [MPV input.conf documentation](https://mpv.io/manual/stable/#input-conf) for full syntax.
+</Note>
+
+## Accessibility
+
+### Screen Readers
+
+StreamVault uses semantic HTML and ARIA labels for screen reader compatibility:
+
+- Navigation landmarks for main sections
+- Button labels for all controls
+- Alt text for media posters
+
+### Keyboard-Only Navigation
+
+All functionality is accessible via keyboard:
+
+- `Tab` to navigate between elements
+- `Enter` to activate buttons
+- `Arrow keys` for sliders and dropdowns
+- `Esc` to close dialogs
+
+## Platform-Specific Notes
+
+### Windows
+
+- MPV named pipe IPC enables progress tracking and resume functionality
+- System notifications appear in Action Center
+- System tray icon provides quick access
+
+### Linux
+
+- MPV uses Unix sockets for IPC
+- Desktop notifications via DBus
+- Ensure MPV is installed via package manager
+
+### macOS
+
+- MPV installed via Homebrew recommended
+- Notification Center integration
+- May require accessibility permissions for keyboard shortcuts
+
+## Troubleshooting Shortcuts
+
+<Accordion title="Shortcuts not working in MPV">
+**Solution**: 
+
+1. Ensure MPV is launched via StreamVault (not manually opened)
+2. Check if you have a custom `input.conf` overriding defaults
+3. Verify MPV window has focus (click on it)
+4. Try resetting MPV config by renaming `~/.config/mpv/` or `%APPDATA%/mpv/`
+</Accordion>
+
+<Accordion title="Browser player shortcuts not responding">
+**Solution**:
+
+1. Click inside the player area to give it focus
+2. Ensure no modal dialogs are open (close with `Esc`)
+3. Refresh the app if shortcuts stop working
+4. Check browser console for JavaScript errors (Ctrl+Shift+I in dev mode)
+</Accordion>
+
+<Accordion title="Resume dialog shortcuts not working">
+**Solution**:
+
+1. Ensure the dialog is focused (click on it)
+2. Dialog shortcuts only work when the resume dialog is visible
+3. Try clicking "Resume" or "Start Over" buttons if shortcuts fail
+</Accordion>
+
+## Related Resources
+
+- [MPV Manual](https://mpv.io/manual/stable/) - Complete MPV documentation
+- [Troubleshooting](/guides/troubleshooting) - Common issues and solutions
+- [Configuration Settings](/configuration/settings) - Customize StreamVault settings

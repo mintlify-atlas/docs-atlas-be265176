@@ -1,0 +1,275 @@
+---
+title: Component Architecture
+description: Overview of StreamVault's React component architecture and design patterns
+---
+
+## Architecture Overview
+
+StreamVault uses a modern React component architecture built on **React 18** with **TypeScript**, combining Radix UI primitives with custom components for a desktop media library experience.
+
+### Core Technologies
+
+<CardGroup cols={3}>
+  <Card title="React 18" icon="react">
+    Modern hooks-based components with concurrent features
+  </Card>
+  <Card title="Radix UI" icon="component">
+    Unstyled, accessible UI primitives (shadcn/ui pattern)
+  </Card>
+  <Card title="Framer Motion" icon="wand-magic-sparkles">
+    Fluid animations and motion effects
+  </Card>
+</CardGroup>
+
+## Component Categories
+
+### Core Components
+
+Foundational components that make up the main application structure:
+
+- **MovieCard** - Media item display with poster, progress, and context menu (`src/components/MovieCard.tsx:77`)
+- **EpisodeBrowser** - TV episode grid and selection interface
+- **Sidebar** - Main navigation and library sections
+- **StreamView** - Primary content browsing view
+
+### Player Components
+
+Video playback and streaming interfaces:
+
+- **VideoPlayer** - Built-in HTML5 video player with transcoding support (`src/components/VideoPlayer.tsx:20`)
+- **VideasyPlayer** - Alternative player integration
+- **PlayerModal** - Player container and controls wrapper
+
+### Social Components
+
+Social features and watch together functionality:
+
+- **FriendsPanel** - Friends list and social sidebar (`src/components/Social/FriendsPanel.tsx`)
+- **ActivityFeed** - Real-time friend activity stream
+- **WatchTogetherModal** - Synchronized viewing sessions
+- **ChatWindow** - In-app messaging system
+
+### AI Components
+
+AI-powered features for content discovery:
+
+- **AIChatView** - AI assistant for media recommendations (`src/components/AI/AIChatView.tsx`)
+- **TmdbDeepProfileCard** - Enhanced metadata with AI insights
+
+### Modal Components
+
+Dialog and overlay interfaces:
+
+- **SettingsModal** - Application configuration (`src/components/SettingsModal.tsx`)
+- **ContentDetailsModal** - Media metadata and details
+- **OnboardingModal** - First-time user experience
+- **ResumeDialog** - Playback resumption prompt
+
+## Design System
+
+### Monochrome Theme
+
+StreamVault uses a **pure monochrome dark theme** focused on grayscale aesthetics:
+
+```css
+/* Design tokens from src/index.css:16 */
+--background: 0 0% 4%;      /* Deep black */
+--foreground: 0 0% 98%;     /* Near white */
+--primary: 0 0% 85%;        /* Light gray */
+--accent: 0 0% 70%;         /* Medium gray */
+--muted: 0 0% 16%;          /* Dark gray */
+```
+
+### Typography
+
+Custom Inter font stack with optimized rendering:
+
+```css
+/* Font configuration from src/index.css:55 */
+font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+letter-spacing: -0.01em;
+```
+
+## State Management
+
+### Component State Patterns
+
+1. **Local State** - React `useState` for component-specific data
+2. **Tauri State** - Backend state via Tauri commands (`@tauri-apps/api`)
+3. **Event-Driven** - Tauri events for real-time updates
+
+### Example: Media Item State
+
+```typescript
+interface MediaItem {
+  id: number;
+  title: string;
+  media_type: 'movie' | 'tvshow' | 'tvepisode';
+  poster_path: string | null;
+  progress_percent: number;
+  resume_position_seconds: number | null;
+  duration_seconds: number | null;
+  is_cloud: boolean;
+}
+```
+
+## Tauri API Integration
+
+Components communicate with the Rust backend via Tauri commands:
+
+```typescript
+import { invoke } from '@tauri-apps/api/tauri';
+
+// Example: Fetch media library
+const items = await invoke<MediaItem[]>('get_all_media');
+
+// Example: Start playback
+await invoke('play_media_mpv', { mediaId: item.id });
+```
+
+### Event Listeners
+
+Components subscribe to backend events:
+
+```typescript
+import { listen } from '@tauri-apps/api/event';
+
+useEffect(() => {
+  const unlisten = listen('library-updated', () => {
+    // Refresh media library
+  });
+  return () => { unlisten.then(f => f()); };
+}, []);
+```
+
+## Performance Patterns
+
+### Memoization
+
+Components use `React.memo` with custom comparison functions:
+
+```typescript
+// From MovieCard.tsx:28
+export function areMovieCardPropsEqual(
+  prev: MovieCardProps,
+  next: MovieCardProps
+) {
+  // Compare only fields that affect rendering
+  return (
+    prev.item.id === next.item.id &&
+    prev.item.progress_percent === next.item.progress_percent
+  );
+}
+
+const MovieCard = memo(MovieCardBase, areMovieCardPropsEqual);
+```
+
+### Animation Optimization
+
+Framer Motion with layout containment:
+
+```typescript
+<motion.div
+  initial={{ opacity: 0, y: 20 }}
+  animate={{ opacity: 1, y: 0 }}
+  exit={{ opacity: 0, scale: 0.9 }}
+  transition={{ duration: 0.3 }}
+>
+  {/* Card content */}
+</motion.div>
+```
+
+## File Organization
+
+```
+src/components/
+├── ui/                    # Radix UI primitives (shadcn/ui)
+│   ├── button.tsx
+│   ├── dialog.tsx
+│   ├── slider.tsx
+│   └── ...
+├── Social/                # Social features
+│   ├── FriendsPanel.tsx
+│   ├── ActivityFeed.tsx
+│   └── ...
+├── WatchTogether/         # Watch together features
+│   ├── WatchTogetherModal.tsx
+│   └── ...
+├── AI/                    # AI components
+│   ├── AIChatView.tsx
+│   └── ...
+├── chat/                  # Chat components
+│   ├── ChatWindow.tsx
+│   ├── ChatBubble.tsx
+│   └── ...
+├── MovieCard.tsx          # Core media card
+├── VideoPlayer.tsx        # Video player
+├── SettingsModal.tsx      # Settings UI
+└── index.ts               # Component exports
+```
+
+## Context Menu Pattern
+
+Components use Radix UI Context Menu for right-click actions:
+
+```typescript
+<ContextMenu>
+  <ContextMenuTrigger>
+    {/* Movie card */}
+  </ContextMenuTrigger>
+  <ContextMenuContent>
+    <ContextMenuItem onClick={() => onPlay(item)}>
+      <Play /> Play
+    </ContextMenuItem>
+    <ContextMenuItem onClick={() => onFixMatch(item)}>
+      <Edit /> Fix Match
+    </ContextMenuItem>
+  </ContextMenuContent>
+</ContextMenu>
+```
+
+## Styling Approach
+
+### Utility Classes
+
+Tailwind CSS with custom utilities (`src/index.css`):
+
+- `.glass` - Glassmorphism effect
+- `.shadow-glow` - Monochrome glow shadows
+- `.card-hover` - Interactive card states
+- `.media-card` - Premium media card styling
+
+### Class Composition
+
+Using `cn()` utility for conditional classes:
+
+```typescript
+import { cn } from '@/lib/utils';
+
+<div className={cn(
+  "rounded-xl border",
+  isActive && "border-white/50",
+  className
+)} />
+```
+
+## Best Practices
+
+1. **Use Radix UI primitives** - For accessible, unstyled base components
+2. **Memoize expensive renders** - Use `React.memo` with custom comparisons
+3. **Keep animations smooth** - Use Framer Motion for complex transitions
+4. **Follow monochrome theme** - Stick to grayscale design tokens
+5. **Integrate with Tauri** - Use `invoke()` for backend communication
+6. **Handle errors gracefully** - Always show user-friendly error states
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="UI Library" href="/components/ui-library" icon="swatchbook">
+    Explore Radix UI primitives and design tokens
+  </Card>
+  <Card title="Tauri Integration" href="/architecture/tauri-integration" icon="plug">
+    Learn how components interact with the Rust backend
+  </Card>
+</CardGroup>

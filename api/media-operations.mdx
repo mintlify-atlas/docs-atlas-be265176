@@ -1,0 +1,493 @@
+---
+title: "Media Operations"
+description: "APIs for managing the media library, searching content, and handling episodes"
+---
+
+## MediaItem Interface
+
+Core data structure representing all media types (movies, TV shows, episodes).
+
+```typescript src/services/api.ts
+export interface MediaItem {
+    id: number;
+    title: string;
+    year?: number;
+    overview?: string;
+    cast_names?: string;
+    poster_path?: string;
+    file_path?: string;
+    media_type: 'movie' | 'tvshow' | 'tvepisode';
+    duration_seconds?: number;
+    resume_position_seconds?: number;
+    last_watched?: string;
+    season_number?: number;
+    episode_number?: number;
+    progress_percent?: number;
+    parent_id?: number;
+    tmdb_id?: string;
+    episode_title?: string;
+    still_path?: string;
+    // Cloud storage fields
+    is_cloud?: boolean;
+    cloud_file_id?: string;
+}
+```
+
+<ParamField path="id" type="number" required>
+  Unique database identifier
+</ParamField>
+
+<ParamField path="title" type="string" required>
+  Media title (show name for TV shows, movie title for movies)
+</ParamField>
+
+<ParamField path="media_type" type="'movie' | 'tvshow' | 'tvepisode'" required>
+  Type of media item:
+  - `movie` - Standalone movie file
+  - `tvshow` - TV series container (no file, just metadata)
+  - `tvepisode` - Individual episode linked to parent show
+</ParamField>
+
+<ParamField path="year" type="number">
+  Release year
+</ParamField>
+
+<ParamField path="overview" type="string">
+  Plot description from TMDB
+</ParamField>
+
+<ParamField path="poster_path" type="string">
+  Cached poster image filename (use `getCachedImageUrl()` to convert to URL)
+</ParamField>
+
+<ParamField path="file_path" type="string">
+  Local file system path or cloud file name
+</ParamField>
+
+<ParamField path="duration_seconds" type="number">
+  Total runtime in seconds
+</ParamField>
+
+<ParamField path="resume_position_seconds" type="number">
+  Last playback position (0 if not started or completed)
+</ParamField>
+
+<ParamField path="progress_percent" type="number">
+  Watch progress percentage (calculated field)
+</ParamField>
+
+<ParamField path="season_number" type="number">
+  Season number (TV episodes only)
+</ParamField>
+
+<ParamField path="episode_number" type="number">
+  Episode number (TV episodes only)
+</ParamField>
+
+<ParamField path="parent_id" type="number">
+  ID of parent TV show (episodes only)
+</ParamField>
+
+<ParamField path="tmdb_id" type="string">
+  TMDB identifier for metadata lookups
+</ParamField>
+
+<ParamField path="episode_title" type="string">
+  Episode-specific title (TV episodes only)
+</ParamField>
+
+<ParamField path="still_path" type="string">
+  Episode thumbnail image (TV episodes only)
+</ParamField>
+
+<ParamField path="is_cloud" type="boolean">
+  Whether this is a cloud-stored file
+</ParamField>
+
+<ParamField path="cloud_file_id" type="string">
+  Google Drive file ID (cloud files only)
+</ParamField>
+
+## Get Library
+
+Retrieve movies or TV shows with optional search.
+
+```typescript src/services/api.ts
+export const getLibrary = async (
+  type: 'movie' | 'tv',
+  search: string = ''
+): Promise<MediaItem[]>
+```
+
+<ParamField path="type" type="'movie' | 'tv'" required>
+  Media type to retrieve:
+  - `'movie'` - Returns all movies
+  - `'tv'` - Returns all TV shows (not individual episodes)
+</ParamField>
+
+<ParamField path="search" type="string" default="">
+  Case-insensitive title search filter
+</ParamField>
+
+<ResponseField name="items" type="MediaItem[]">
+  Array of media items sorted by title
+</ResponseField>
+
+### Example Usage
+
+```typescript
+import { getLibrary } from '@/services/api';
+
+// Get all movies
+const movies = await getLibrary('movie');
+
+// Search for specific movie
+const inception = await getLibrary('movie', 'inception');
+
+// Get all TV shows
+const shows = await getLibrary('tv');
+```
+
+### Backend Command
+
+```rust src-tauri/src/main.rs
+#[tauri::command]
+async fn get_library(
+    state: State<'_, AppState>,
+    media_type: String,
+    search: Option<String>,
+) -> Result<Vec<database::MediaItem>, String>
+```
+
+## Get Library Filtered
+
+Retrieve library with cloud storage filtering.
+
+```typescript src/services/api.ts
+export const getLibraryFiltered = async (
+    type: 'movie' | 'tv',
+    search: string = '',
+    isCloud?: boolean
+): Promise<MediaItem[]>
+```
+
+<ParamField path="type" type="'movie' | 'tv'" required>
+  Media type to retrieve
+</ParamField>
+
+<ParamField path="search" type="string" default="">
+  Title search filter
+</ParamField>
+
+<ParamField path="isCloud" type="boolean">
+  Filter by storage location:
+  - `true` - Only cloud files
+  - `false` - Only local files
+  - `undefined` - All files
+</ParamField>
+
+### Example Usage
+
+```typescript
+// Get only cloud movies
+const cloudMovies = await getLibraryFiltered('movie', '', true);
+
+// Get only local TV shows
+const localShows = await getLibraryFiltered('tv', '', false);
+
+// Search cloud library
+const results = await getLibraryFiltered('movie', 'avatar', true);
+```
+
+## Get Episodes
+
+Retrieve all episodes for a TV show.
+
+```typescript src/services/api.ts
+export const getEpisodes = async (seriesId: number): Promise<MediaItem[]>
+```
+
+<ParamField path="seriesId" type="number" required>
+  ID of parent TV show
+</ParamField>
+
+<ResponseField name="episodes" type="MediaItem[]">
+  Array of episodes sorted by season and episode number
+</ResponseField>
+
+### Example Usage
+
+```typescript
+import { getLibrary, getEpisodes } from '@/services/api';
+
+// Get a TV show
+const shows = await getLibrary('tv', 'breaking bad');
+const show = shows[0];
+
+// Get all episodes
+const episodes = await getEpisodes(show.id);
+
+// Group by season
+const seasons = episodes.reduce((acc, ep) => {
+  const season = ep.season_number || 1;
+  if (!acc[season]) acc[season] = [];
+  acc[season].push(ep);
+  return acc;
+}, {} as Record<number, MediaItem[]>);
+```
+
+## Get Watch History
+
+Retrieve recently watched content.
+
+```typescript src/services/api.ts
+export const getWatchHistory = async (): Promise<MediaItem[]>
+```
+
+<ResponseField name="history" type="MediaItem[]">
+  Up to 50 most recently watched items, sorted by `last_watched` descending
+</ResponseField>
+
+### Example Usage
+
+```typescript
+const history = await getWatchHistory();
+
+history.forEach(item => {
+  console.log(`Watched: ${item.title}`);
+  console.log(`Progress: ${item.progress_percent}%`);
+  console.log(`Last watched: ${item.last_watched}`);
+});
+```
+
+## Add/Remove from Watch History
+
+```typescript src/services/api.ts
+// Remove single item
+export const removeFromWatchHistory = async (id: number): Promise<void>
+
+// Clear all history
+export const clearAllWatchHistory = async (): Promise<void>
+```
+
+<ParamField path="id" type="number" required>
+  Media item ID to remove from history
+</ParamField>
+
+### Example Usage
+
+```typescript
+import { removeFromWatchHistory, clearAllWatchHistory } from '@/services/api';
+
+// Remove specific item
+await removeFromWatchHistory(123);
+
+// Clear all watch history
+await clearAllWatchHistory();
+```
+
+## Mark as Complete
+
+Mark content as fully watched (100%).
+
+```typescript src/services/api.ts
+export const markAsComplete = async (mediaId: number): Promise<{ message: string }>
+```
+
+<ParamField path="mediaId" type="number" required>
+  ID of media to mark as complete
+</ParamField>
+
+### Example Usage
+
+```typescript
+const response = await markAsComplete(movieId);
+console.log(response.message); // "Marked 'Movie Title' as complete"
+```
+
+## Search & Filter
+
+Search TMDB for metadata matching.
+
+```typescript src/services/api.ts
+export interface TmdbSearchResult {
+    id: number;
+    title?: string;
+    name?: string;
+    media_type: 'movie' | 'tv';
+    poster_path?: string;
+    backdrop_path?: string;
+    overview?: string;
+    release_date?: string;
+    first_air_date?: string;
+    vote_average?: number;
+}
+
+export interface TmdbSearchResponse {
+    results: TmdbSearchResult[];
+    total_results: number;
+}
+
+export const searchTmdb = async (query: string): Promise<TmdbSearchResponse>
+```
+
+### Example Usage
+
+```typescript
+import { searchTmdb } from '@/services/api';
+
+const results = await searchTmdb('inception');
+
+results.results.forEach(item => {
+  console.log(`${item.title || item.name} (${item.media_type})`);
+});
+```
+
+## Fix Match
+
+Update media metadata from TMDB.
+
+```typescript src/services/api.ts
+export const fixMatch = async (
+  id: number,
+  tmdbId: string,
+  type: 'movie' | 'tv'
+): Promise<void>
+```
+
+<ParamField path="id" type="number" required>
+  Media item ID to update
+</ParamField>
+
+<ParamField path="tmdbId" type="string" required>
+  TMDB ID for correct metadata
+</ParamField>
+
+<ParamField path="type" type="'movie' | 'tv'" required>
+  Media type
+</ParamField>
+
+### Example Usage
+
+```typescript
+import { searchTmdb, fixMatch } from '@/services/api';
+
+// User selects correct match
+const results = await searchTmdb('inception');
+const correctMatch = results.results[0];
+
+// Update media with correct metadata
+await fixMatch(mediaId, correctMatch.id.toString(), 'movie');
+```
+
+## Delete Media
+
+Delete media files from disk.
+
+```typescript src/services/api.ts
+export interface DeleteResponse {
+    success: boolean;
+    deleted_count: number;
+    failed_count: number;
+    message: string;
+}
+
+export const deleteMediaFiles = async (mediaIds: number[]): Promise<DeleteResponse>
+```
+
+<ParamField path="mediaIds" type="number[]" required>
+  Array of media IDs to delete
+</ParamField>
+
+### Example Usage
+
+```typescript
+import { deleteMediaFiles } from '@/services/api';
+
+const result = await deleteMediaFiles([123, 456, 789]);
+
+if (result.success) {
+  console.log(`Deleted ${result.deleted_count} files`);
+  if (result.failed_count > 0) {
+    console.warn(`Failed to delete ${result.failed_count} files`);
+  }
+}
+```
+
+## Image Handling
+
+Convert cached image names to usable URLs.
+
+```typescript src/services/api.ts
+export const getCachedImageUrl = (imageName: string): Promise<string | null>
+```
+
+<ParamField path="imageName" type="string" required>
+  Image filename from `poster_path` or `still_path`
+</ParamField>
+
+<ResponseField name="url" type="string | null">
+  Asset protocol URL or null if image doesn't exist
+</ResponseField>
+
+### Example Usage
+
+```typescript
+import { getLibrary, getCachedImageUrl } from '@/services/api';
+
+const movies = await getLibrary('movie');
+
+for (const movie of movies) {
+  if (movie.poster_path) {
+    const posterUrl = await getCachedImageUrl(movie.poster_path);
+    if (posterUrl) {
+      // Use in <img src={posterUrl} />
+    }
+  }
+}
+```
+
+## Episode Metadata
+
+Rich episode information from TMDB.
+
+```typescript src/services/api.ts
+export interface TmdbEpisodeInfo {
+    episode_number: number;
+    name: string;
+    overview?: string;
+    still_path?: string;
+    is_cloud?: boolean;
+    cloud_file_id?: string;
+    air_date?: string;
+    runtime?: number;
+    vote_average?: number;
+}
+
+export interface TmdbSeasonDetails {
+    season_number: number;
+    name: string;
+    episodes: TmdbEpisodeInfo[];
+}
+
+export const getTvSeasonEpisodes = async (
+  tvId: number,
+  seasonNumber: number
+): Promise<TmdbSeasonDetails | null>
+```
+
+### Example Usage
+
+```typescript
+import { getTvSeasonEpisodes } from '@/services/api';
+
+const season = await getTvSeasonEpisodes(1399, 1); // Breaking Bad S01
+
+if (season) {
+  console.log(`${season.name} - ${season.episodes.length} episodes`);
+  
+  season.episodes.forEach(ep => {
+    console.log(`E${ep.episode_number}: ${ep.name}`);
+  });
+}
+```

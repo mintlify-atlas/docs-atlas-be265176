@@ -1,0 +1,549 @@
+---
+title: "Player Control"
+description: "APIs for controlling playback, tracking progress, and managing MPV sessions"
+---
+
+## Play Media
+
+Launch MPV player for a media item.
+
+```typescript src/services/api.ts
+export const playMedia = async (id: number, resume: boolean): Promise<void>
+```
+
+<ParamField path="id" type="number" required>
+  Media item ID to play
+</ParamField>
+
+<ParamField path="resume" type="boolean" required>
+  Whether to resume from last position:
+  - `true` - Start from `resume_position_seconds`
+  - `false` - Start from beginning
+</ParamField>
+
+### Example Usage
+
+```typescript
+import { playMedia, getResumeInfo } from '@/services/api';
+
+// Check for resume progress
+const resumeInfo = await getResumeInfo(mediaId);
+
+if (resumeInfo.has_progress) {
+  // Ask user: Resume or Start Over?
+  const shouldResume = confirm(
+    `Resume from ${resumeInfo.time_str}? (${resumeInfo.progress_percent}%)`
+  );
+  await playMedia(mediaId, shouldResume);
+} else {
+  // No progress, start from beginning
+  await playMedia(mediaId, false);
+}
+```
+
+### Backend Command
+
+```rust src-tauri/src/main.rs
+#[tauri::command]
+async fn play_with_mpv(
+    state: State<'_, AppState>,
+    media_id: i64,
+    resume: bool
+) -> Result<(), String>
+```
+
+## ResumeInfo Interface
+
+Playback progress information.
+
+```typescript src/services/api.ts
+export interface ResumeInfo {
+    has_progress: boolean;
+    position: number;
+    duration: number;
+    time_str: string;
+    progress_percent: number;
+}
+```
+
+<ResponseField name="has_progress" type="boolean">
+  Whether item has been partially watched (false if less than 5% or greater than 95%)
+</ResponseField>
+
+<ResponseField name="position" type="number">
+  Current position in seconds
+</ResponseField>
+
+<ResponseField name="duration" type="number">
+  Total duration in seconds
+</ResponseField>
+
+<ResponseField name="time_str" type="string">
+  Formatted time string (HH:MM:SS)
+</ResponseField>
+
+<ResponseField name="progress_percent" type="number">
+  Progress as percentage (0-100)
+</ResponseField>
+
+## Get Resume Info
+
+Retrieve playback progress for a media item.
+
+```typescript src/services/api.ts
+export const getResumeInfo = async (id: number): Promise<ResumeInfo>
+```
+
+<ParamField path="id" type="number" required>
+  Media item ID
+</ParamField>
+
+### Example Usage
+
+```typescript
+import { getResumeInfo } from '@/services/api';
+
+const info = await getResumeInfo(movieId);
+
+if (info.has_progress) {
+  console.log(`Resume from: ${info.time_str}`);
+  console.log(`${info.progress_percent}% complete`);
+  
+  // Show resume prompt
+  const resumeUI = (
+    <div>
+      <p>Continue watching from {info.time_str}?</p>
+      <button onClick={() => playMedia(movieId, true)}>Resume</button>
+      <button onClick={() => playMedia(movieId, false)}>Start Over</button>
+    </div>
+  );
+} else {
+  console.log('No progress - fresh start');
+}
+```
+
+### Auto-Reset Behavior
+
+<Note>
+  Progress is automatically cleared when watch percentage reaches 95%. This prevents showing "resume" prompts for completed content.
+</Note>
+
+## Update Watch Progress
+
+Update playback position (used by built-in player).
+
+```typescript src/services/api.ts
+export const updateWatchProgress = async (
+  id: number,
+  currentTime: number,
+  duration: number
+): Promise<void>
+```
+
+<ParamField path="id" type="number" required>
+  Media item ID
+</ParamField>
+
+<ParamField path="currentTime" type="number" required>
+  Current playback position in seconds
+</ParamField>
+
+<ParamField path="duration" type="number" required>
+  Total video duration in seconds
+</ParamField>
+
+### Example Usage
+
+```typescript
+import { updateWatchProgress } from '@/services/api';
+
+// HTML5 video player
+const videoElement = document.querySelector('video');
+
+// Update progress every 5 seconds
+setInterval(() => {
+  if (!videoElement.paused) {
+    updateWatchProgress(
+      mediaId,
+      videoElement.currentTime,
+      videoElement.duration
+    );
+  }
+}, 5000);
+
+// Save on pause
+videoElement.addEventListener('pause', () => {
+  updateWatchProgress(
+    mediaId,
+    videoElement.currentTime,
+    videoElement.duration
+  );
+});
+```
+
+## Clear Progress
+
+Reset playback progress to beginning.
+
+```typescript src/services/api.ts
+export const clearProgress = async (id: number): Promise<void>
+```
+
+<ParamField path="id" type="number" required>
+  Media item ID
+</ParamField>
+
+### Example Usage
+
+```typescript
+import { clearProgress } from '@/services/api';
+
+// Add "Start Over" button
+async function handleStartOver(mediaId: number) {
+  await clearProgress(mediaId);
+  await playMedia(mediaId, false);
+}
+```
+
+## StreamInfo Interface
+
+Stream URL and metadata for built-in player.
+
+```typescript src/services/api.ts
+export interface StreamInfo {
+    stream_url: string;
+    file_path: string;
+    title: string;
+    poster?: string;
+    duration_seconds?: number;
+    resume_position_seconds?: number;
+    // Cloud streaming fields
+    is_cloud?: boolean;
+    access_token?: string;
+}
+```
+
+<ResponseField name="stream_url" type="string">
+  Tauri asset protocol URL or HTTP stream URL
+</ResponseField>
+
+<ResponseField name="file_path" type="string">
+  Original file path (for reference)
+</ResponseField>
+
+<ResponseField name="title" type="string">
+  Media title for player UI
+</ResponseField>
+
+<ResponseField name="poster" type="string">
+  Poster image URL
+</ResponseField>
+
+<ResponseField name="duration_seconds" type="number">
+  Video duration
+</ResponseField>
+
+<ResponseField name="resume_position_seconds" type="number">
+  Last playback position
+</ResponseField>
+
+<ResponseField name="is_cloud" type="boolean">
+  Whether this is a cloud file
+</ResponseField>
+
+<ResponseField name="access_token" type="string">
+  Google Drive access token (cloud files only)
+</ResponseField>
+
+## Get Stream URL
+
+Get streaming URL for built-in player.
+
+```typescript src/services/api.ts
+export const getStreamUrl = async (id: number): Promise<StreamInfo>
+```
+
+<ParamField path="id" type="number" required>
+  Media item ID
+</ParamField>
+
+### Example Usage
+
+```typescript
+import { getStreamUrl } from '@/services/api';
+
+function VideoPlayer({ mediaId }: { mediaId: number }) {
+  const [streamInfo, setStreamInfo] = useState<StreamInfo | null>(null);
+
+  useEffect(() => {
+    async function loadStream() {
+      const info = await getStreamUrl(mediaId);
+      setStreamInfo(info);
+    }
+    loadStream();
+  }, [mediaId]);
+
+  if (!streamInfo) return <div>Loading...</div>;
+
+  return (
+    <video
+      src={streamInfo.stream_url}
+      poster={streamInfo.poster}
+      controls
+      autoPlay
+    />
+  );
+}
+```
+
+## MPV Session Tracking
+
+Track active MPV player sessions.
+
+```typescript src/services/api.ts
+export interface MpvStatus {
+    is_playing: boolean;
+    media_id: number;
+    title?: string;
+    position?: number;
+    duration?: number;
+    paused?: boolean;
+}
+
+export interface MpvSession {
+    media_id: number;
+    pid: number;
+    title: string;
+    start_time: number;
+}
+
+export const getMpvStatus = async (mediaId: number): Promise<MpvStatus>
+
+export const getActiveMpvSessions = async (): Promise<MpvSession[]>
+```
+
+### Example Usage
+
+```typescript
+import { getMpvStatus, getActiveMpvSessions } from '@/services/api';
+
+// Check if specific media is playing
+const status = await getMpvStatus(movieId);
+
+if (status.is_playing) {
+  console.log(`${status.title} is playing`);
+  console.log(`Position: ${status.position}/${status.duration}`);
+  console.log(`Paused: ${status.paused}`);
+}
+
+// List all active MPV sessions
+const sessions = await getActiveMpvSessions();
+
+sessions.forEach(session => {
+  console.log(`PID ${session.pid}: ${session.title}`);
+  console.log(`Started: ${new Date(session.start_time * 1000).toLocaleString()}`);
+});
+```
+
+## MPV Progress Tracking
+
+StreamVault uses a Lua script to track MPV playback progress automatically.
+
+### How It Works
+
+1. **Script Injection**: When MPV launches, a Lua script is loaded
+2. **Periodic Saves**: Script saves position every 2 seconds to JSON file
+3. **Shutdown Hook**: Final position saved when MPV closes
+4. **Backend Sync**: Rust backend reads JSON and updates database
+
+### Progress File Location
+
+```
+%APPDATA%/StreamVault/mpv_progress/{media_id}.json
+```
+
+### Progress Data Structure
+
+```rust src-tauri/src/mpv_ipc.rs
+pub struct MpvProgressInfo {
+    pub position: f64,
+    pub duration: f64,
+    pub paused: bool,
+    pub eof_reached: bool,
+    pub quit_time: Option<i64>,
+}
+```
+
+### Lua Script Sample
+
+```lua
+local progress_file = "/path/to/progress.json"
+local save_interval = 2 -- seconds
+
+local function save_progress()
+    local pos = mp.get_property_number("time-pos")
+    local duration = mp.get_property_number("duration")
+    local paused = mp.get_property_bool("pause") or false
+    local eof = mp.get_property_bool("eof-reached") or false
+    
+    local data = string.format(
+        '{"position":%.3f,"duration":%.3f,"paused":%s,"eof_reached":%s}',
+        pos, duration,
+        paused and "true" or "false",
+        eof and "true" or "false"
+    )
+    
+    local file = io.open(progress_file, "w")
+    if file then
+        file:write(data)
+        file:close()
+    end
+end
+
+mp.add_periodic_timer(save_interval, save_progress)
+mp.register_event("shutdown", save_progress)
+```
+
+## Play with VLC
+
+Alternative player support.
+
+```typescript src/services/api.ts
+export const playWithVlc = async (id: number, resume: boolean): Promise<void>
+```
+
+<ParamField path="id" type="number" required>
+  Media item ID
+</ParamField>
+
+<ParamField path="resume" type="boolean" required>
+  Whether to resume from last position
+</ParamField>
+
+### Example Usage
+
+```typescript
+import { playWithVlc } from '@/services/api';
+
+// User selected VLC as player
+await playWithVlc(mediaId, shouldResume);
+```
+
+## Player Preferences
+
+Manage default player selection.
+
+```typescript src/services/api.ts
+export type PlayerPreference = 'mpv' | 'vlc' | 'builtin' | 'ask';
+
+export const getPlayerPreference = (): PlayerPreference
+
+export const setPlayerPreference = (preference: PlayerPreference): void
+```
+
+### Example Usage
+
+```typescript
+import {
+  getPlayerPreference,
+  setPlayerPreference,
+  playMedia,
+  playWithVlc
+} from '@/services/api';
+
+async function handlePlayClick(mediaId: number, resume: boolean) {
+  const preference = getPlayerPreference();
+
+  switch (preference) {
+    case 'mpv':
+      await playMedia(mediaId, resume);
+      break;
+    case 'vlc':
+      await playWithVlc(mediaId, resume);
+      break;
+    case 'builtin':
+      // Navigate to built-in player
+      navigate(`/player/${mediaId}`);
+      break;
+    case 'ask':
+      // Show player selection dialog
+      showPlayerSelectionDialog(mediaId, resume);
+      break;
+  }
+}
+
+// Save user preference
+function savePlayerChoice(choice: PlayerPreference) {
+  setPlayerPreference(choice);
+}
+```
+
+## Transcoding Support
+
+Automatic transcoding for incompatible formats.
+
+```typescript src/services/api.ts
+export interface TranscodeResponse {
+    session_id: number;
+    stream_url: string;
+}
+
+export const checkNeedsTranscode = async (filePath: string): Promise<boolean>
+
+export const startTranscodeStream = async (
+  filePath: string,
+  startTime?: number
+): Promise<TranscodeResponse>
+
+export const stopTranscodeStream = async (sessionId: number): Promise<void>
+```
+
+### Example Usage
+
+```typescript
+import {
+  checkNeedsTranscode,
+  startTranscodeStream,
+  stopTranscodeStream
+} from '@/services/api';
+
+async function playVideo(filePath: string) {
+  const needsTranscode = await checkNeedsTranscode(filePath);
+
+  if (needsTranscode) {
+    console.log('Video needs transcoding...');
+    const { session_id, stream_url } = await startTranscodeStream(filePath);
+    
+    // Play transcoded stream
+    videoPlayer.src = stream_url;
+    
+    // Cleanup on stop
+    videoPlayer.addEventListener('ended', async () => {
+      await stopTranscodeStream(session_id);
+    });
+  } else {
+    // Direct playback
+    videoPlayer.src = filePath;
+  }
+}
+```
+
+## Events
+
+Listen for playback events.
+
+```typescript
+import { listen } from '@tauri-apps/api/event';
+
+// MPV playback ended
+const unlisten = await listen('mpv-playback-ended', (event) => {
+  const { media_id } = event.payload;
+  console.log(`Playback ended for media ${media_id}`);
+  
+  // Refresh library to show updated progress
+  refreshLibrary();
+});
+
+// Cleanup
+unlisten();
+```

@@ -1,0 +1,263 @@
+---
+title: Self-Hosting StreamVault
+description: Fork and deploy your own StreamVault backend server
+---
+
+StreamVault uses a backend server for OAuth authentication and API proxying. While the official backend is hosted at `streamvault-backend-server.onrender.com`, you can fork and deploy your own instance.
+
+## Backend Repository
+
+Official backend repository: [StreamVault-Backend](https://github.com/SlasshyOverhere/StreamVault-Backend)
+
+## Why Self-Host?
+
+- **Privacy**: Keep your OAuth credentials and API keys on your own server
+- **Control**: Customize authentication flows and API proxy behavior
+- **Reliability**: Avoid dependency on third-party hosting
+- **Development**: Test backend changes alongside frontend development
+
+## Prerequisites
+
+- Node.js v18 or higher
+- A hosting platform (Render, Vercel, Railway, etc.)
+- Google OAuth credentials (for Drive integration)
+- TMDB API access token (for metadata)
+
+## Setup Instructions
+
+### 1. Fork the Backend Repository
+
+1. Navigate to [StreamVault-Backend](https://github.com/SlasshyOverhere/StreamVault-Backend)
+2. Click **Fork** to create your own copy
+3. Clone your fork locally:
+
+```bash
+git clone https://github.com/YOUR_USERNAME/StreamVault-Backend.git
+cd StreamVault-Backend
+```
+
+### 2. Configure Environment Variables
+
+Create a `.env` file in the backend repository with your credentials:
+
+```bash
+# Google OAuth 2.0 Credentials
+GDRIVE_CLIENT_ID=your-client-id.apps.googleusercontent.com
+GDRIVE_CLIENT_SECRET=your-client-secret
+
+# TMDB API (for metadata proxy)
+TMDB_ACCESS_TOKEN=your-tmdb-bearer-token
+
+# AI Chat signature secret (must match frontend)
+AI_CLIENT_SIGNATURE_SECRET=your-shared-secret-key
+
+# Optional: Custom redirect URI
+# GDRIVE_REDIRECT_URI=http://localhost:8085/callback
+```
+
+<Tip>
+See [Connect Google Drive](/quickstart#connect-google-drive) for instructions on obtaining OAuth credentials.
+</Tip>
+
+### 3. Deploy the Backend
+
+Deploy your backend to a hosting platform. Here's an example using **Render**:
+
+1. Create a new Web Service on [render.com](https://render.com)
+2. Connect your forked GitHub repository
+3. Configure the service:
+   - **Build Command**: `npm install`
+   - **Start Command**: `npm start`
+   - **Environment**: Node
+4. Add environment variables from your `.env` file
+5. Deploy and note your backend URL (e.g., `https://your-backend.onrender.com`)
+
+<Note>
+Other platforms like Vercel, Railway, or Heroku work similarly. Ensure WebSocket support is enabled for Watch Together features.
+</Note>
+
+### 4. Configure the Frontend
+
+Update your StreamVault desktop app to use your custom backend.
+
+#### Environment Variables
+
+Create or update `.env` in the frontend repository:
+
+```bash
+# Point to your deployed backend
+VITE_AUTH_SERVER_URL=https://your-backend.onrender.com
+
+# AI Chat signature secret (must match backend)
+VITE_AI_SIGNATURE_SECRET=your-shared-secret-key
+
+# Optional: Override AI model
+VITE_AI_MODEL=llama-3.1-8b-instant
+```
+
+#### Build-Time Backend Configuration
+
+For Tauri builds, set environment variables before building:
+
+```bash
+export STREAMVAULT_AUTH_SERVER_URL=https://your-backend.onrender.com
+export STREAMVAULT_TMDB_PROXY_URL=https://your-backend.onrender.com/api/tmdb
+export STREAMVAULT_WS_URL=wss://your-backend.onrender.com/ws/watchtogether
+
+npm run tauri build
+```
+
+<Warning>
+These environment variables are embedded at build time. You'll need to rebuild the app whenever you change backend URLs.
+</Warning>
+
+### 5. Update AUTH_SERVER_URL in Rust Code
+
+Edit `src-tauri/src/gdrive.rs` and update line 17:
+
+```rust
+// Before
+const AUTH_SERVER_URL: &str = "https://streamvault-backend-server.onrender.com";
+
+// After
+const AUTH_SERVER_URL: &str = "https://your-backend.onrender.com";
+```
+
+This URL is used for:
+- `/auth/google` - OAuth authorization flow
+- `/auth/refresh` - Token refresh requests
+
+### 6. Build the Desktop App
+
+With all configuration in place, build the app:
+
+```bash
+npm install
+npm run tauri build
+```
+
+Your build will be in `src-tauri/target/release/bundle/`.
+
+## Verification
+
+### Test OAuth Flow
+
+1. Launch your built app
+2. Go to **Settings → Cloud Storage**
+3. Click **Connect Google Drive**
+4. Verify the OAuth flow completes successfully
+5. Check that your backend logs show the authentication request
+
+### Test TMDB Proxy
+
+1. Click **Update Library** to index media
+2. Verify posters and metadata are fetched correctly
+3. Check backend logs for TMDB proxy requests
+
+### Test Watch Together (Optional)
+
+If using the Watch Together feature:
+
+1. Start a Watch Together session
+2. Verify WebSocket connection to `wss://your-backend.onrender.com/ws/watchtogether`
+3. Test real-time playback synchronization
+
+## Environment Variables Reference
+
+### Frontend (.env)
+
+| Variable | Description | Default |
+|----------|-------------|--------|
+| `VITE_AUTH_SERVER_URL` | Backend server URL | `https://streamvault-backend-server.onrender.com` |
+| `VITE_AI_SIGNATURE_SECRET` | Shared secret for AI chat | (required) |
+| `VITE_AI_MODEL` | Default AI model | `llama-3.1-8b-instant` |
+
+### Build-Time Variables
+
+| Variable | Description | Default |
+|----------|-------------|--------|
+| `STREAMVAULT_AUTH_SERVER_URL` | Backend URL embedded in build | (required) |
+| `STREAMVAULT_TMDB_PROXY_URL` | TMDB proxy endpoint | `{AUTH_SERVER_URL}/api/tmdb` |
+| `STREAMVAULT_WS_URL` | WebSocket endpoint | `wss://{AUTH_SERVER_URL}/ws/watchtogether` |
+
+### Backend (.env)
+
+| Variable | Description |
+|----------|-------------|
+| `GDRIVE_CLIENT_ID` | Google OAuth client ID |
+| `GDRIVE_CLIENT_SECRET` | Google OAuth client secret |
+| `TMDB_ACCESS_TOKEN` | TMDB API bearer token |
+| `AI_CLIENT_SIGNATURE_SECRET` | Shared secret for AI requests |
+| `GDRIVE_REDIRECT_URI` | OAuth redirect URI (optional) |
+
+## Troubleshooting
+
+### OAuth Returns 404
+
+**Problem**: Google Drive authentication fails with 404 error.
+
+**Solution**: 
+- Verify `AUTH_SERVER_URL` in `gdrive.rs` matches your deployed backend
+- Check that backend environment variables are set correctly
+- Ensure backend is deployed and accessible
+
+### TMDB Metadata Not Loading
+
+**Problem**: Posters and metadata fail to load.
+
+**Solution**:
+- Verify `TMDB_ACCESS_TOKEN` is set in backend `.env`
+- Check backend logs for TMDB API errors
+- Ensure `STREAMVAULT_TMDB_PROXY_URL` points to your backend
+
+### Watch Together Not Connecting
+
+**Problem**: WebSocket connection fails for Watch Together.
+
+**Solution**:
+- Verify your hosting platform supports WebSockets
+- Check `STREAMVAULT_WS_URL` uses `wss://` protocol
+- Ensure backend WebSocket server is running on `/ws/watchtogether`
+
+### AI Chat Signature Errors
+
+**Problem**: AI chat requests fail with signature validation errors.
+
+**Solution**:
+- Ensure `VITE_AI_SIGNATURE_SECRET` (frontend) matches `AI_CLIENT_SIGNATURE_SECRET` (backend)
+- Rebuild both frontend and backend after changing the secret
+
+## Updating Your Backend
+
+To pull updates from the official backend:
+
+```bash
+cd StreamVault-Backend
+
+# Add official repo as upstream
+git remote add upstream https://github.com/SlasshyOverhere/StreamVault-Backend.git
+
+# Fetch and merge updates
+git fetch upstream
+git merge upstream/main
+
+# Resolve any conflicts, then push to your fork
+git push origin main
+```
+
+Redeploy your backend after merging updates.
+
+## Security Considerations
+
+<Warning>
+- **Never commit** `.env` files or secrets to version control
+- Use your platform's secret management for production credentials
+- Rotate `AI_CLIENT_SIGNATURE_SECRET` periodically
+- Keep Google OAuth client secret secure
+</Warning>
+
+## Next Steps
+
+- [Troubleshooting](/guides/troubleshooting) - Common issues and solutions
+- [Configuration Settings](/configuration/settings) - Detailed configuration reference
+- [Introduction](/introduction) - Understanding StreamVault's architecture

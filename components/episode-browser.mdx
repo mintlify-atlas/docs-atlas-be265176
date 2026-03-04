@@ -1,0 +1,422 @@
+---
+title: 'EpisodeBrowser'
+description: 'Browse and play TV show episodes organized by season with metadata'
+icon: 'tv'
+---
+
+## Overview
+
+The `EpisodeBrowser` component provides a dedicated interface for browsing TV show episodes. It displays show information, season selection, and a scrollable list of episodes with thumbnails, progress tracking, and metadata from TMDB.
+
+<img
+  src="/images/components/episode-browser.png"
+  alt="Episode browser showing season selector and episode list with thumbnails"
+  className="rounded-lg"
+/>
+
+## Features
+
+- **Season Selector**: Toggle between seasons with visual tabs
+- **Episode Thumbnails**: Still images from TMDB or local cache
+- **Progress Tracking**: Visual progress bars and watched badges per episode
+- **TMDB Integration**: Episode titles, descriptions, runtime, and ratings
+- **Metadata Refresh**: Manual refresh button to update series metadata
+- **Resume Dialog**: Prompts to resume or start over for in-progress episodes
+- **Watch Together**: Support for synchronized playback sessions (beta)
+- **Responsive Layout**: Two-column layout with sticky show info sidebar
+- **Real-time Updates**: Listens for playback events and metadata changes
+
+## Component Interface
+
+```typescript
+interface EpisodeBrowserProps {
+  show: MediaItem
+  onBack: () => void
+  onWatchTogether?: (episode: MediaItem) => void
+}
+```
+
+### Props
+
+<ParamField path="show" type="MediaItem" required>
+  The TV show container item with TMDB metadata
+</ParamField>
+
+<ParamField path="onBack" type="() => void" required>
+  Callback when the back button is clicked to return to library view
+</ParamField>
+
+<ParamField path="onWatchTogether" type="(episode: MediaItem) => void">
+  Optional callback to start a Watch Together session for an episode (beta feature)
+</ParamField>
+
+## Usage Example
+
+```tsx
+import { EpisodeBrowser } from '@/components/EpisodeBrowser'
+import { MediaItem } from '@/services/api'
+import { useState } from 'react'
+
+function TVShowView() {
+  const [selectedShow, setSelectedShow] = useState<MediaItem | null>(null)
+
+  if (selectedShow) {
+    return (
+      <EpisodeBrowser
+        show={selectedShow}
+        onBack={() => setSelectedShow(null)}
+        onWatchTogether={(episode) => createWatchParty(episode)}
+      />
+    )
+  }
+
+  return (
+    <div className="grid grid-cols-6 gap-6">
+      {tvShows.map(show => (
+        <MovieCard
+          key={show.id}
+          item={show}
+          onClick={() => setSelectedShow(show)}
+          onFixMatch={handleFixMatch}
+        />
+      ))}
+    </div>
+  )
+}
+```
+
+## Layout Structure
+
+### Two-Column Design
+
+The component uses a responsive two-column layout:
+
+```tsx
+<div className="flex flex-col lg:flex-row gap-4">
+  {/* Left Sidebar: Show Info (fixed width) */}
+  <div className="w-full lg:w-48 xl:w-56">
+    <img src={posterUrl} alt={show.title} />
+    <h1>{show.title}</h1>
+    <p>{show.year}</p>
+    {/* Season/Episode counts */}
+    {/* Refresh metadata button */}
+  </div>
+
+  {/* Right Panel: Episode List (scrollable) */}
+  <div className="flex-1 flex flex-col">
+    {/* Season tabs */}
+    {/* Episode grid */}
+  </div>
+</div>
+```
+
+### Episode Card Layout
+
+Each episode displays:
+
+```tsx
+<div className="flex gap-4 p-4 hover:bg-muted/30">
+  {/* Thumbnail (16:9 aspect ratio) */}
+  <div className="w-40 aspect-video">
+    <EpisodeThumbnailImage />
+    {/* Progress bar overlay */}
+    {/* Watched badge */}
+  </div>
+
+  {/* Episode Info */}
+  <div className="flex-1">
+    <div className="flex items-center gap-2">
+      <span>Episode {episode_number}</span>
+      {/* Status badges */}
+    </div>
+    <h4>{episodeTitle}</h4>
+    
+    {/* Metadata */}
+    <div className="flex gap-3 text-xs text-muted-foreground">
+      <span>⏱ {runtime} min</span>
+      <span>⭐ {vote_average}</span>
+    </div>
+
+    {/* Overview */}
+    <p className="line-clamp-2">{overview}</p>
+
+    {/* Play/Watch Together buttons (on hover) */}
+  </div>
+</div>
+```
+
+## State Management
+
+The component manages multiple pieces of state:
+
+```typescript
+const [episodes, setEpisodes] = useState<MediaItem[]>([])  // All episodes
+const [selectedSeason, setSelectedSeason] = useState<number>(1)  // Current season
+const [tmdbEpisodesBySeason, setTmdbEpisodesBySeason] = useState<Map>(new Map())  // TMDB metadata
+const [expandedEpisode, setExpandedEpisode] = useState<number | null>(null)  // Expanded description
+const [resumeDialogOpen, setResumeDialogOpen] = useState(false)  // Resume prompt
+const [isRefreshing, setIsRefreshing] = useState(false)  // Metadata refresh
+```
+
+## Episode Thumbnail Component
+
+The `EpisodeThumbnailImage` sub-component handles image loading:
+
+```typescript
+function EpisodeThumbnailImage({
+  localStillPath,  // Path to cached still image
+  tmdbStillUrl,    // TMDB image URL (fallback)
+  episodeTitle,
+  episodeNumber
+}) {
+  // 1. Try loading from local cache
+  // 2. Fall back to TMDB URL
+  // 3. Show episode number placeholder if no image
+}
+```
+
+Images are loaded with priority:
+1. **Local cache** (`image_cache/` directory)
+2. **TMDB still** (w300 size)
+3. **Placeholder** with episode number
+
+## TMDB Integration
+
+### Loading Episode Metadata
+
+When a season is selected, the component fetches TMDB data:
+
+```typescript
+useEffect(() => {
+  const seasonEpisodes = episodes.filter(ep => ep.season_number === selectedSeason)
+  
+  // Only fetch if episodes lack local runtime data
+  const needsTmdb = !seasonEpisodes.every(ep => ep.duration_seconds >= 60)
+  
+  if (needsTmdb && !tmdbEpisodesBySeason.has(selectedSeason)) {
+    loadTmdbEpisodes(selectedSeason)
+  }
+}, [selectedSeason, episodes])
+```
+
+### Metadata Refresh
+
+Manual refresh updates all seasons:
+
+```typescript
+const handleRefreshMetadata = async () => {
+  const tmdbId = parseInt(show.tmdb_id)
+  const result = await refreshSeriesMetadata(tmdbId, show.title)
+  await loadEpisodes()  // Reload episodes with fresh data
+}
+```
+
+## Progress Tracking
+
+### Progress Calculation
+
+```typescript
+const progress = episode.progress_percent ||
+  (episode.resume_position_seconds && episode.duration_seconds
+    ? (episode.resume_position_seconds / episode.duration_seconds) * 100
+    : 0)
+
+const isFinished = progress >= 95
+const hasProgress = progress > 0 && !isFinished
+```
+
+### Visual Indicators
+
+- **Progress Badge**: Shows percentage (1-94%)
+- **Progress Bar**: White bar on thumbnail bottom
+- **Watched Badge**: Green badge with checkmark (95%+)
+
+## Resume Dialog
+
+When playing an in-progress episode:
+
+```typescript
+const handlePlay = async (episode: MediaItem) => {
+  const resumeInfo = await getResumeInfo(episode.id)
+
+  if (resumeInfo.has_progress && resumeInfo.progress_percent < 95) {
+    // Show resume dialog
+    setResumeDialogData({ episode, resumeInfo })
+    setResumeDialogOpen(true)
+  } else {
+    // Play from start
+    await startPlayback(episode, 0)
+  }
+}
+```
+
+The `ResumeDialog` component displays:
+- Current position timestamp
+- "Resume" button
+- "Start Over" button
+- Poster thumbnail
+
+## Event Listeners
+
+The component listens for real-time events:
+
+```typescript
+useEffect(() => {
+  // Reload episodes when playback ends
+  const unlistenEnded = await listen('mpv-playback-ended', () => {
+    loadEpisodes()
+  })
+
+  // Reload when marked complete manually
+  const unlistenComplete = await listen('media-marked-complete', () => {
+    loadEpisodes()
+  })
+
+  // Reload when metadata is updated (Fix Match, file watcher)
+  const unlistenUpdated = await listen('library-updated', () => {
+    loadEpisodes()
+    loadPoster()
+  })
+
+  return () => {
+    unlistenEnded()
+    unlistenComplete()
+    unlistenUpdated()
+  }
+}, [show.id])
+```
+
+## Season Selection
+
+Seasons are extracted from episodes and sorted:
+
+```typescript
+const seasons = useMemo(() => {
+  return [...new Set(episodes.map(ep => ep.season_number || 1))]
+    .sort((a, b) => a - b)
+}, [episodes])
+```
+
+Season tabs display horizontally:
+
+```tsx
+{seasons.map(season => (
+  <button
+    key={season}
+    onClick={() => setSelectedSeason(season)}
+    className={cn(
+      "px-3 py-1.5 rounded-lg text-sm font-medium",
+      selectedSeason === season
+        ? "bg-white text-black"
+        : "bg-muted text-muted-foreground hover:text-foreground"
+    )}
+  >
+    Season {season}
+  </button>
+))}
+```
+
+## Responsive Design
+
+### Breakpoints
+
+- **Mobile** (`< 768px`): Single column, smaller thumbnails
+- **Tablet** (`768px - 1024px`): Two-column with compact sidebar
+- **Desktop** (`> 1024px`): Full two-column with expanded sidebar
+
+### Hidden Elements
+
+On small screens:
+- Show overview is hidden (XL only: `hidden xl:block`)
+- Episode descriptions are hidden (MD only: `hidden md:block`)
+- Play buttons are hidden (MD only: `hidden md:flex`)
+
+## Watch Together Integration
+
+If `onWatchTogether` prop is provided:
+
+```tsx
+<Button
+  variant="outline"
+  className="border-purple-500/50 text-purple-400"
+  onClick={(e) => {
+    e.stopPropagation()
+    onWatchTogether(episode)
+  }}
+>
+  <Users className="w-4 h-4 mr-1" />
+  Together
+</Button>
+```
+
+This creates a synchronized watch session (beta feature).
+
+## Performance Optimization
+
+### Memoization
+
+```typescript
+// Memoize season list to prevent recalculation
+const seasons = useMemo(() => {
+  return [...new Set(episodes.map(ep => ep.season_number || 1))].sort()
+}, [episodes])
+
+// Memoize filtered episodes
+const filteredEpisodes = useMemo(() => {
+  return episodes
+    .filter(ep => (ep.season_number || 1) === selectedSeason)
+    .sort((a, b) => (a.episode_number || 0) - (b.episode_number || 0))
+}, [episodes, selectedSeason])
+```
+
+### Conditional TMDB Fetching
+
+Only fetches TMDB metadata when:
+1. Episodes lack local runtime data (`duration_seconds < 60`)
+2. Season hasn't been fetched yet
+3. TMDB ID is available
+
+## Animations
+
+Entry animation for each episode card:
+
+```typescript
+initial={{ opacity: 0, y: 10 }}
+animate={{ opacity: 1, y: 0 }}
+transition={{ delay: index * 0.02 }}  // 20ms stagger
+```
+
+Page-level slide-in animation:
+
+```typescript
+initial={{ opacity: 0, x: 20 }}
+animate={{ opacity: 1, x: 0 }}
+```
+
+## Accessibility
+
+- Semantic HTML structure (`<nav>`, `<button>`, `<article>`)
+- Keyboard navigation for episode selection
+- `aria-label` on play buttons
+- Focus states on interactive elements
+- Screen reader friendly episode metadata
+
+## Related Components
+
+<CardGroup cols={2}>
+  <Card title="MovieCard" icon="image" href="/components/movie-card">
+    Display individual movies and TV shows in grid layout
+  </Card>
+  <Card title="ResumeDialog" icon="clock" href="/components/resume-dialog">
+    Prompt to resume or start over for in-progress media
+  </Card>
+  <Card title="PlayerModal" icon="play" href="/components/player-modal">
+    Select player (MPV, VLC, Built-in) for playback
+  </Card>
+</CardGroup>
+
+## Source Code
+
+Location: `~/workspace/source/src/components/EpisodeBrowser.tsx`
+
+The component is approximately 639 lines including the thumbnail loader sub-component.

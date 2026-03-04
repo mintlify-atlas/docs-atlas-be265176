@@ -1,122 +1,141 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mint Starter Kit",
+  "name": "StreamVault",
+  "theme": "aspen",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#ffffff",
+    "light": "#d4d4d4",
+    "dark": "#171717"
   },
-  "favicon": "/favicon.svg",
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/SlasshyOverhere/StreamVault"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/SlasshyOverhere/StreamVault"
+    }
+  },
   "navigation": {
     "tabs": [
       {
-        "tab": "Guides",
+        "tab": "Documentation",
         "groups": [
           {
-            "group": "Getting started",
+            "group": "Get Started",
             "pages": [
-              "index",
-              "quickstart",
-              "development"
+              "introduction",
+              "installation",
+              "quickstart"
             ]
           },
           {
-            "group": "Customization",
+            "group": "Core Features",
             "pages": [
-              "essentials/settings",
-              "essentials/navigation"
+              "features/google-drive",
+              "features/metadata",
+              "features/playback",
+              "features/library-management"
             ]
           },
           {
-            "group": "Writing content",
+            "group": "Social Features",
             "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/reusable-snippets"
+              "social/watch-together",
+              "social/friends",
+              "social/activity"
             ]
           },
           {
-            "group": "AI tools",
+            "group": "Configuration",
             "pages": [
-              "ai-tools/cursor",
-              "ai-tools/claude-code",
-              "ai-tools/windsurf"
+              "configuration/settings",
+              "configuration/tmdb-setup",
+              "configuration/google-drive-setup",
+              "configuration/player-setup"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/self-hosting",
+              "guides/troubleshooting",
+              "guides/keyboard-shortcuts"
             ]
           }
         ]
       },
       {
-        "tab": "API reference",
+        "tab": "API Reference",
         "groups": [
           {
-            "group": "API documentation",
+            "group": "Frontend API",
             "pages": [
-              "api-reference/introduction"
+              "api/overview",
+              "api/media-operations",
+              "api/player-control",
+              "api/cloud-operations"
             ]
           },
           {
-            "group": "Endpoint examples",
+            "group": "Tauri Commands",
             "pages": [
-              "api-reference/endpoint/get",
-              "api-reference/endpoint/create",
-              "api-reference/endpoint/delete",
-              "api-reference/endpoint/webhook"
+              "api/tauri/library",
+              "api/tauri/playback",
+              "api/tauri/metadata",
+              "api/tauri/google-drive",
+              "api/tauri/social"
+            ]
+          },
+          {
+            "group": "Backend Integration",
+            "pages": [
+              "api/backend/overview",
+              "api/backend/authentication",
+              "api/backend/websocket"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Components",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "components/overview",
+              "components/ui-library"
+            ]
+          },
+          {
+            "group": "Core Components",
+            "pages": [
+              "components/movie-card",
+              "components/episode-browser",
+              "components/settings-modal",
+              "components/sidebar"
+            ]
+          },
+          {
+            "group": "Player Components",
+            "pages": [
+              "components/video-player",
+              "components/mpv-integration",
+              "components/resume-dialog"
+            ]
+          },
+          {
+            "group": "Social Components",
+            "pages": [
+              "components/watch-together-modal",
+              "components/friends-panel",
+              "components/chat-window"
             ]
           }
         ]
       }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
-  "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
-    "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
-    }
-  },
-  "contextual": {
-    "options": [
-     "copy",
-     "view",
-     "chatgpt",
-     "claude",
-     "perplexity",
-     "mcp",
-     "cursor",
-     "vscode"
-   ]
-  },
-  "footer": {
-    "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
-    }
+    ]
   }
 }

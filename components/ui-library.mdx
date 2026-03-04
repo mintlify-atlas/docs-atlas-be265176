@@ -1,0 +1,591 @@
+---
+title: UI Library Reference
+description: Complete reference for Radix UI primitives and design tokens used in StreamVault
+---
+
+## Overview
+
+StreamVault's UI library follows the **shadcn/ui pattern** - Radix UI primitives styled with Tailwind CSS and packaged as reusable components. All components are located in `src/components/ui/`.
+
+## Design Philosophy
+
+<AccordionGroup>
+  <Accordion title="Unstyled Primitives">
+    Radix UI provides accessible, unstyled components that we style with Tailwind CSS to match StreamVault's monochrome aesthetic.
+  </Accordion>
+  <Accordion title="Composable Components">
+    Components are built from smaller primitives that can be composed together for complex UIs.
+  </Accordion>
+  <Accordion title="Full Customization">
+    Since components live in your codebase, you can modify them to fit your exact needs.
+  </Accordion>
+</AccordionGroup>
+
+## UI Primitives
+
+### Button
+
+<Info>Location: `src/components/ui/button.tsx`</Info>
+
+Flexible button component with multiple variants and sizes.
+
+**Variants:**
+- `default` - White button with black text (primary action)
+- `destructive` - Red button for dangerous actions
+- `outline` - Outlined button with hover effect
+- `secondary` - Subtle gray button
+- `ghost` - Transparent button with hover
+- `link` - Underlined text link
+
+**Sizes:**
+- `default` - h-10 px-4
+- `sm` - h-9 px-3
+- `lg` - h-11 px-8
+- `icon` - h-10 w-10 (square)
+
+**Example:**
+```tsx
+import { Button } from '@/components/ui/button';
+
+<Button variant="default" size="lg">
+  Play Movie
+</Button>
+
+<Button variant="outline" size="icon">
+  <Settings className="h-4 w-4" />
+</Button>
+```
+
+### Dialog
+
+<Info>Location: `src/components/ui/dialog.tsx`</Info>
+
+Modal dialog with overlay and animations. Built on `@radix-ui/react-dialog`.
+
+**Components:**
+- `Dialog` - Root component
+- `DialogTrigger` - Button to open dialog
+- `DialogContent` - Dialog body with animations
+- `DialogHeader` - Header section
+- `DialogFooter` - Footer with actions
+- `DialogTitle` - Accessible title
+- `DialogDescription` - Description text
+
+**Example:**
+```tsx
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription
+} from '@/components/ui/dialog';
+
+<Dialog open={isOpen} onOpenChange={setIsOpen}>
+  <DialogContent>
+    <DialogHeader>
+      <DialogTitle>Movie Details</DialogTitle>
+      <DialogDescription>
+        View metadata and playback options
+      </DialogDescription>
+    </DialogHeader>
+    {/* Dialog content */}
+  </DialogContent>
+</Dialog>
+```
+
+### Slider
+
+<Info>Location: `src/components/ui/slider.tsx`</Info>
+
+Accessible slider for volume, progress, and numeric inputs. Uses `@radix-ui/react-slider`.
+
+**Example:**
+```tsx
+import { Slider } from '@/components/ui/slider';
+
+<Slider
+  value={[volume]}
+  onValueChange={([v]) => setVolume(v)}
+  max={100}
+  step={1}
+  className="w-full"
+/>
+```
+
+### Switch
+
+<Info>Location: `src/components/ui/switch.tsx`</Info>
+
+Toggle switch for boolean settings. Built on `@radix-ui/react-switch`.
+
+**Example:**
+```tsx
+import { Switch } from '@/components/ui/switch';
+
+<div className="flex items-center gap-3">
+  <Switch
+    checked={autoPlay}
+    onCheckedChange={setAutoPlay}
+  />
+  <label>Auto-play next episode</label>
+</div>
+```
+
+### Tabs
+
+<Info>Location: `src/components/ui/tabs.tsx`</Info>
+
+Accessible tab navigation. Uses `@radix-ui/react-tabs`.
+
+**Components:**
+- `Tabs` - Root container
+- `TabsList` - Tab button container
+- `TabsTrigger` - Individual tab button
+- `TabsContent` - Tab panel content
+
+**Example:**
+```tsx
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+
+<Tabs defaultValue="movies">
+  <TabsList>
+    <TabsTrigger value="movies">Movies</TabsTrigger>
+    <TabsTrigger value="shows">TV Shows</TabsTrigger>
+  </TabsList>
+  <TabsContent value="movies">
+    {/* Movie grid */}
+  </TabsContent>
+  <TabsContent value="shows">
+    {/* Show grid */}
+  </TabsContent>
+</Tabs>
+```
+
+### Toast
+
+<Info>Location: `src/components/ui/toast.tsx`, `src/components/ui/use-toast.ts`</Info>
+
+Notification toast system with queue and animations.
+
+**Example:**
+```tsx
+import { useToast } from '@/components/ui/use-toast';
+import { Toaster } from '@/components/ui/toaster';
+
+function MyComponent() {
+  const { toast } = useToast();
+
+  return (
+    <>
+      <Button onClick={() => {
+        toast({
+          title: "Library Updated",
+          description: "Found 5 new movies",
+        });
+      }}>
+        Show Toast
+      </Button>
+      <Toaster />
+    </>
+  );
+}
+```
+
+### Checkbox
+
+<Info>Location: `src/components/ui/checkbox.tsx`</Info>
+
+Accessible checkbox with indeterminate state. Built on `@radix-ui/react-checkbox`.
+
+**Example:**
+```tsx
+import { Checkbox } from '@/components/ui/checkbox';
+
+<div className="flex items-center gap-2">
+  <Checkbox
+    id="completed"
+    checked={isCompleted}
+    onCheckedChange={setIsCompleted}
+  />
+  <label htmlFor="completed">Mark as watched</label>
+</div>
+```
+
+### Card
+
+<Info>Location: `src/components/ui/card.tsx`</Info>
+
+Flexible card container with header, content, and footer sections.
+
+**Components:**
+- `Card` - Root container
+- `CardHeader` - Header section
+- `CardTitle` - Card title
+- `CardDescription` - Card description
+- `CardContent` - Main content area
+- `CardFooter` - Footer actions
+
+**Example:**
+```tsx
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardContent
+} from '@/components/ui/card';
+
+<Card>
+  <CardHeader>
+    <CardTitle>Library Statistics</CardTitle>
+  </CardHeader>
+  <CardContent>
+    <p>Total movies: 1,234</p>
+  </CardContent>
+</Card>
+```
+
+### Context Menu
+
+<Info>Location: `src/components/ui/context-menu.tsx`</Info>
+
+Right-click context menu with nested items and shortcuts. Built on `@radix-ui/react-context-menu`.
+
+**Components:**
+- `ContextMenu` - Root component
+- `ContextMenuTrigger` - Wraps the element
+- `ContextMenuContent` - Menu popup
+- `ContextMenuItem` - Menu item
+- `ContextMenuSeparator` - Visual divider
+
+**Example:**
+```tsx
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+  ContextMenuSeparator
+} from '@/components/ui/context-menu';
+
+<ContextMenu>
+  <ContextMenuTrigger>
+    <MovieCard item={movie} />
+  </ContextMenuTrigger>
+  <ContextMenuContent>
+    <ContextMenuItem onClick={() => playMovie(movie)}>
+      <Play className="mr-2 h-4 w-4" />
+      Play
+    </ContextMenuItem>
+    <ContextMenuSeparator />
+    <ContextMenuItem onClick={() => deleteMovie(movie)}>
+      <Trash className="mr-2 h-4 w-4" />
+      Delete
+    </ContextMenuItem>
+  </ContextMenuContent>
+</ContextMenu>
+```
+
+### Scroll Area
+
+<Info>Location: `src/components/ui/scroll-area.tsx`</Info>
+
+Custom scrollbar with smooth scrolling. Uses `@radix-ui/react-scroll-area`.
+
+**Example:**
+```tsx
+import { ScrollArea } from '@/components/ui/scroll-area';
+
+<ScrollArea className="h-[500px] w-full">
+  {/* Long content */}
+</ScrollArea>
+```
+
+### Separator
+
+<Info>Location: `src/components/ui/separator.tsx`</Info>
+
+Visual divider for content sections. Built on `@radix-ui/react-separator`.
+
+**Example:**
+```tsx
+import { Separator } from '@/components/ui/separator';
+
+<div>
+  <h3>Movies</h3>
+  <Separator className="my-4" />
+  <p>Your movie collection</p>
+</div>
+```
+
+### Progress
+
+<Info>Location: `src/components/ui/progress.tsx`</Info>
+
+Progress bar for loading and completion states. Uses `@radix-ui/react-progress`.
+
+**Example:**
+```tsx
+import { Progress } from '@/components/ui/progress';
+
+<Progress value={watchProgress} max={100} className="w-full" />
+```
+
+### Input & Label
+
+<Info>Location: `src/components/ui/input.tsx`, `src/components/ui/label.tsx`</Info>
+
+Form input with accessible label.
+
+**Example:**
+```tsx
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+
+<div className="space-y-2">
+  <Label htmlFor="api-key">TMDB API Key</Label>
+  <Input
+    id="api-key"
+    type="text"
+    placeholder="Enter your API key"
+    value={apiKey}
+    onChange={(e) => setApiKey(e.target.value)}
+  />
+</div>
+```
+
+## Design Tokens
+
+### Color System
+
+<Info>Location: `src/index.css:16`</Info>
+
+StreamVault uses a **pure monochrome** color palette:
+
+```css
+:root {
+  /* Backgrounds */
+  --background: 0 0% 4%;      /* Deep black */
+  --card: 0 0% 7%;            /* Card background */
+  --popover: 0 0% 9%;         /* Popover background */
+  
+  /* Foregrounds */
+  --foreground: 0 0% 98%;     /* Near white */
+  --card-foreground: 0 0% 98%;
+  
+  /* Primary - Light Gray */
+  --primary: 0 0% 85%;
+  --primary-foreground: 0 0% 4%;
+  
+  /* Secondary */
+  --secondary: 0 0% 12%;
+  --secondary-foreground: 0 0% 98%;
+  
+  /* Muted */
+  --muted: 0 0% 16%;
+  --muted-foreground: 0 0% 55%;
+  
+  /* Accent - Medium Gray */
+  --accent: 0 0% 70%;
+  --accent-foreground: 0 0% 4%;
+  
+  /* Borders & Inputs */
+  --border: 0 0% 18%;
+  --input: 0 0% 15%;
+  --ring: 0 0% 85%;
+  
+  /* Destructive - Red for warnings */
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 0 0% 98%;
+}
+```
+
+**Usage:**
+```tsx
+<div className="bg-background text-foreground border border-border">
+  <h1 className="text-primary">Title</h1>
+  <p className="text-muted-foreground">Description</p>
+</div>
+```
+
+### Border Radius
+
+```css
+--radius: 0.875rem; /* 14px - default rounded corners */
+```
+
+**Utilities:**
+- `rounded-lg` - `var(--radius)`
+- `rounded-md` - `calc(var(--radius) - 2px)`
+- `rounded-sm` - `calc(var(--radius) - 4px)`
+
+### Typography
+
+**Font Stack:**
+```css
+--font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 
+             "SF Pro Text", "Helvetica Neue", sans-serif;
+```
+
+**Font Features:**
+```css
+font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+letter-spacing: -0.01em;
+```
+
+### Shadows
+
+Custom shadow utilities (`src/index.css:169`):
+
+```css
+/* Elevation shadows */
+.shadow-elevation-1  /* Subtle card shadow */
+.shadow-elevation-2  /* Medium dialog shadow */
+.shadow-elevation-3  /* Heavy floating shadow */
+
+/* Glow effects (monochrome) */
+.shadow-glow-sm      /* Small glow */
+.shadow-glow         /* Medium glow */
+.shadow-glow-lg      /* Large glow */
+```
+
+### Animations
+
+Framer Motion + Tailwind animations:
+
+**Built-in:**
+- `animate-accordion-down` / `animate-accordion-up`
+- `animate-pulse-soft` - Gentle opacity pulse
+- `animate-fade-in` - Fade in with slide up
+- `animate-scale-in` - Scale and fade in
+- `animate-glow-pulse` - Pulsing glow effect
+
+**Custom keyframes available in `src/index.css:211`**
+
+## Utility Classes
+
+### Glassmorphism
+
+```css
+.glass        /* Subtle glass effect */
+.glass-heavy  /* Strong glass effect */
+.glass-light  /* Light glass effect */
+```
+
+### Cards
+
+```css
+.card-base      /* Base card styling */
+.card-hover     /* Interactive card with hover lift */
+.media-card     /* Premium media poster card */
+```
+
+### Buttons
+
+```css
+.btn-primary    /* White primary button with shimmer */
+.btn-secondary  /* Gray secondary button */
+.btn-ghost      /* Transparent hover button */
+.btn-icon       /* Square icon button */
+```
+
+### Grid Layouts
+
+```css
+.grid-media     /* Responsive media grid (2-7 cols) */
+.list-media     /* Horizontal list layout */
+```
+
+## Icon System
+
+StreamVault uses **Lucide React** for icons:
+
+```tsx
+import { Play, Pause, Settings, X, Film } from 'lucide-react';
+
+<Play className="h-4 w-4" />
+<Settings className="h-5 w-5 text-muted-foreground" />
+```
+
+**Common sizes:**
+- `h-4 w-4` - Small icons (16px)
+- `h-5 w-5` - Default icons (20px)
+- `h-6 w-6` - Large icons (24px)
+
+## Dependencies
+
+<Info>From `package.json:19`</Info>
+
+**Radix UI Primitives:**
+```json
+{
+  "@radix-ui/react-avatar": "^1.0.4",
+  "@radix-ui/react-checkbox": "^1.3.3",
+  "@radix-ui/react-context-menu": "^2.2.16",
+  "@radix-ui/react-dialog": "^1.0.5",
+  "@radix-ui/react-dropdown-menu": "^2.0.6",
+  "@radix-ui/react-label": "^2.0.2",
+  "@radix-ui/react-progress": "^1.0.3",
+  "@radix-ui/react-scroll-area": "^1.0.5",
+  "@radix-ui/react-separator": "^1.0.3",
+  "@radix-ui/react-slider": "^1.3.6",
+  "@radix-ui/react-slot": "^1.0.2",
+  "@radix-ui/react-switch": "^1.0.3",
+  "@radix-ui/react-tabs": "^1.0.4",
+  "@radix-ui/react-toast": "^1.1.5",
+  "@radix-ui/react-tooltip": "^1.0.7"
+}
+```
+
+**Styling:**
+```json
+{
+  "class-variance-authority": "^0.7.0",
+  "clsx": "^2.1.0",
+  "tailwind-merge": "^2.2.1",
+  "tailwindcss-animate": "^1.0.7"
+}
+```
+
+**Animation:**
+```json
+{
+  "framer-motion": "^12.23.25"
+}
+```
+
+**Icons:**
+```json
+{
+  "lucide-react": "^0.344.0"
+}
+```
+
+## Best Practices
+
+<Card title="Accessibility First" icon="universal-access">
+  Radix UI components are built with accessibility in mind. Always use semantic HTML and ARIA attributes.
+</Card>
+
+<Card title="Compose Don't Customize" icon="layer-group">
+  Prefer composing primitives over heavy customization. Use `className` prop for styling tweaks.
+</Card>
+
+<Card title="Consistent Spacing" icon="ruler">
+  Use Tailwind spacing scale: `gap-2`, `p-4`, `space-y-6` for consistent layouts.
+</Card>
+
+<Card title="Monochrome Theme" icon="palette">
+  Stick to grayscale design tokens. Only use color for destructive/warning states.
+</Card>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Component Architecture" href="/components/overview" icon="sitemap">
+    Learn about StreamVault's component organization
+  </Card>
+  <Card title="Styling Guide" href="/customization/styling" icon="paintbrush">
+    Deep dive into Tailwind customization
+  </Card>
+</CardGroup>

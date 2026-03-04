@@ -1,0 +1,240 @@
+---
+title: "API Overview"
+description: "Introduction to the StreamVault Frontend API architecture and usage"
+---
+
+## Introduction
+
+StreamVault's frontend API is built on **Tauri IPC** (Inter-Process Communication), enabling TypeScript code to invoke Rust backend functions seamlessly. All communication happens through the `@tauri-apps/api/tauri` module.
+
+## Architecture
+
+### Tauri Command Pattern
+
+The API follows a command-based architecture:
+
+1. **Frontend**: TypeScript wrapper functions in `src/services/api.ts`
+2. **IPC Layer**: Tauri's `invoke()` function serializes/deserializes data
+3. **Backend**: Rust `#[tauri::command]` functions in `src-tauri/src/main.rs`
+
+```typescript
+// Frontend invokes backend command
+import { invoke } from '@tauri-apps/api/tauri';
+
+const items = await invoke<MediaItem[]>('get_library', {
+  mediaType: 'movie',
+  search: 'inception'
+});
+```
+
+```rust
+// Backend handles command
+#[tauri::command]
+async fn get_library(
+    state: State<'_, AppState>,
+    media_type: String,
+    search: Option<String>,
+) -> Result<Vec<database::MediaItem>, String> {
+    // Implementation
+}
+```
+
+### Type Safety
+
+All API functions use TypeScript interfaces that mirror Rust struct definitions:
+
+```typescript
+export interface MediaItem {
+    id: number;
+    title: string;
+    media_type: 'movie' | 'tvshow' | 'tvepisode';
+    file_path?: string;
+    // ... all fields
+}
+```
+
+## Import Patterns
+
+### Standard Imports
+
+```typescript
+import {
+  getLibrary,
+  playMedia,
+  updateWatchProgress,
+  MediaItem,
+  ResumeInfo
+} from '@/services/api';
+```
+
+### Type-Only Imports
+
+```typescript
+import type { MediaItem, StreamInfo } from '@/services/api';
+```
+
+## Error Handling
+
+All API functions use consistent error handling patterns:
+
+### Try-Catch Pattern
+
+```typescript
+try {
+  const items = await getLibrary('movie');
+  // Success - items is MediaItem[]
+} catch (error) {
+  console.error('Failed to get library:', error);
+  // Handle error
+}
+```
+
+### Graceful Fallback Pattern
+
+```typescript
+export const getLibrary = async (
+  type: 'movie' | 'tv',
+  search: string = ''
+): Promise<MediaItem[]> => {
+  try {
+    const items = await invoke<MediaItem[]>('get_library', {
+      mediaType: type,
+      search: search || null
+    });
+    return items;
+  } catch (error) {
+    console.error('Failed to get library:', error);
+    return []; // Return empty array instead of throwing
+  }
+};
+```
+
+### Error Response Type
+
+```typescript
+interface ApiResponse {
+  message: string;
+}
+
+interface ErrorResponse {
+  error: string;
+}
+```
+
+## API Categories
+
+The StreamVault API is organized into logical categories:
+
+<CardGroup cols={2}>
+  <Card title="Media Operations" icon="film" href="/api/media-operations">
+    Library management, search, episodes, and metadata
+  </Card>
+  
+  <Card title="Player Control" icon="play" href="/api/player-control">
+    MPV playback, progress tracking, and session management
+  </Card>
+  
+  <Card title="Cloud Operations" icon="cloud" href="/api/cloud-operations">
+    Google Drive integration and cloud library scanning
+  </Card>
+  
+  <Card title="Configuration" icon="gear" href="/api/configuration">
+    App settings, player preferences, and API keys
+  </Card>
+</CardGroup>
+
+## Getting Started Example
+
+Here's a complete example of fetching and displaying movies:
+
+```typescript
+import { useState, useEffect } from 'react';
+import { getLibrary, type MediaItem } from '@/services/api';
+
+function MovieLibrary() {
+  const [movies, setMovies] = useState<MediaItem[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchMovies() {
+      try {
+        setLoading(true);
+        const items = await getLibrary('movie');
+        setMovies(items);
+      } catch (error) {
+        console.error('Failed to fetch movies:', error);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchMovies();
+  }, []);
+
+  if (loading) return <div>Loading...</div>;
+
+  return (
+    <div>
+      {movies.map(movie => (
+        <div key={movie.id}>
+          <h3>{movie.title}</h3>
+          {movie.year && <p>({movie.year})</p>}
+        </div>
+      ))}
+    </div>
+  );
+}
+```
+
+## Event System
+
+StreamVault uses Tauri events for backend-to-frontend communication:
+
+```typescript
+import { listen } from '@tauri-apps/api/event';
+
+// Listen for library updates
+const unlisten = await listen('library-updated', (event) => {
+  console.log('Library was updated, refresh UI');
+  refreshLibrary();
+});
+
+// Cleanup listener when component unmounts
+unlisten();
+```
+
+### Available Events
+
+- `library-updated` - Library content changed
+- `scan-progress` - Media scan in progress
+- `scan-complete` - Media scan finished
+- `cloud-scan-complete` - Cloud folder scan finished
+- `mpv-playback-ended` - MPV player closed
+- `notification` - System notification
+
+## Data Storage
+
+All app data is stored in the platform-specific app data directory:
+
+- **Windows**: `%APPDATA%/StreamVault/`
+- **macOS**: `~/Library/Application Support/StreamVault/`
+- **Linux**: `~/.StreamVault/`
+
+### Key Files
+
+- `media_library.db` - SQLite database
+- `media_config.json` - User configuration
+- `image_cache/` - Downloaded posters and thumbnails
+- `mpv_progress/` - MPV playback progress tracking
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Media Operations" href="/api/media-operations">
+    Learn about library management APIs
+  </Card>
+  
+  <Card title="Player Control" href="/api/player-control">
+    Explore playback and progress tracking
+  </Card>
+</CardGroup>

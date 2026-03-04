@@ -1,0 +1,311 @@
+---
+title: Google Drive Integration
+description: Full drive indexing with OAuth2 authentication and real-time change detection
+---
+
+## Overview
+
+StreamVault integrates directly with Google Drive to index and stream your media collection without downloading files. The integration uses OAuth2 for secure authentication and the Changes API for efficient real-time synchronization.
+
+## Authentication Flow
+
+StreamVault uses a secure backend proxy for OAuth2 authentication to keep client credentials safe.
+
+### OAuth2 Setup
+
+<Steps>
+  <Step title="Initiate Authentication">
+    Click "Connect Google Drive" in Settings. StreamVault opens the authorization URL via the backend server:
+
+    ```rust
+    // gdrive.rs:686
+    pub fn get_auth_url() -> String {
+        format!("{}/auth/google", AUTH_SERVER_URL)
+    }
+    ```
+
+    The backend handles the OAuth flow and returns tokens via a local callback server.
+  </Step>
+
+  <Step title="Callback Server">
+    A temporary TCP listener on port 8085 receives the authorization callback:
+
+    ```rust
+    // gdrive.rs:754
+    let listener = TcpListener::bind("127.0.0.1:8085")
+        .map_err(|e| format!("Failed to start OAuth callback server: {}", e))?;
+    ```
+
+    Tokens are Base64-encoded in the callback URL and decoded locally.
+  </Step>
+
+  <Step title="Token Storage">
+    Tokens are securely stored in `%APPDATA%/StreamVault/gdrive_tokens.json`:
+
+    ```rust
+    // gdrive.rs:25
+    pub struct GoogleTokens {
+        pub access_token: String,
+        pub refresh_token: Option<String>,
+        pub expires_at: Option<i64>,
+        pub token_type: String,
+    }
+    ```
+  </Step>
+
+  <Step title="Automatic Refresh">
+    Access tokens are automatically refreshed when they expire:
+
+    ```rust
+    // gdrive.rs:114
+    if let Some(expires_at) = t.expires_at {
+        let now = chrono::Utc::now().timestamp();
+        if now >= expires_at - 60 {
+            // Refresh via backend proxy
+            return self.refresh_access_token(refresh_token).await;
+        }
+    }
+    ```
+  </Step>
+</Steps>
+
+## Full Drive Indexing
+
+StreamVault can scan your entire Google Drive for video files with a single click.
+
+### One-Click Scan
+
+The "Update Library" button triggers a recursive scan starting from Drive root:
+
+```rust
+// gdrive.rs:261
+pub async fn list_video_files(
+    &self,
+    folder_id: &str,
+    recursive: bool,
+) -> Result<Vec<DriveItem>, String> {
+    let video_mimes = [
+        "video/mp4",
+        "video/x-matroska",
+        "video/avi",
+        "video/quicktime",
+        "video/webm",
+        "video/x-m4v",
+        "video/x-ms-wmv",
+        "video/x-flv",
+        "video/mp2t",
+    ];
+    // ... paginated search with recursive subfolder scan
+}
+```
+
+### Supported Video Formats
+
+- MP4 (`video/mp4`)
+- MKV (`video/x-matroska`)
+- AVI (`video/avi`)
+- MOV (`video/quicktime`)
+- WebM (`video/webm`)
+- M4V (`video/x-m4v`)
+- WMV (`video/x-ms-wmv`)
+- FLV (`video/x-flv`)
+- TS (`video/mp2t`)
+
+<Note>
+The scan automatically handles pagination with 100 files per page and recursively scans subfolders when enabled.
+</Note>
+
+## Real-Time Change Detection
+
+StreamVault uses Google Drive's Changes API to detect new files without rescanning the entire drive.
+
+### Changes API Implementation
+
+<Steps>
+  <Step title="Initialize Token">
+    On first scan, get a start page token:
+
+    ```rust
+    // gdrive.rs:577
+    pub async fn get_changes_start_token(&self) -> Result<String, String> {
+        let url = format!("{}/changes/startPageToken", DRIVE_API_BASE);
+        // ... returns token for future change tracking
+    }
+    ```
+
+    This token is stored in the database for subsequent polls.
+  </Step>
+
+  <Step title="Poll for Changes">
+    Background task polls every 5 seconds:
+
+    ```rust
+    // gdrive.rs:608
+    pub async fn get_changes(&self, page_token: &str) -> Result<DriveChangesResponse, String> {
+        let url = format!(
+            "{}/changes?pageToken={}&fields=changes(fileId,removed,file(id,name,mimeType,size,modifiedTime,parents)),newStartPageToken,nextPageToken&pageSize=100&includeRemoved=true&spaces=drive",
+            DRIVE_API_BASE,
+            page_token
+        );
+        // ... returns new/modified/deleted files
+    }
+    ```
+  </Step>
+
+  <Step title="Filter Video Changes">
+    Extract only video file changes:
+
+    ```rust
+    // gdrive.rs:637
+    pub async fn get_video_changes(&self, page_token: &str) -> Result<(Vec<DriveItem>, String), String> {
+        let changes = self.get_changes(&current_token).await?;
+        
+        for change in changes.changes {
+            if change.removed.unwrap_or(false) {
+                continue;  // Skip deleted files
+            }
+            
+            if let Some(file) = change.file {
+                if video_mimes.contains(&file.mime_type.as_str()) {
+                    all_video_files.push(file);
+                }
+            }
+        }
+        // ... returns (new_videos, new_token)
+    }
+    ```
+  </Step>
+</Steps>
+
+### Polling Frequency
+
+Changes are checked every **5 seconds** when the app is running (including when minimized to system tray).
+
+<Info>
+The Changes API is highly efficient - it only returns items that have changed since the last poll, not the entire file list.
+</Info>
+
+## Background Sync
+
+StreamVault continues monitoring your Drive even when minimized to the system tray.
+
+### System Tray Notifications
+
+When new media is detected, Windows notifications are displayed:
+
+```plaintext
+StreamVault
+Found new media: Movie Title (2024)
+```
+
+### Incremental Updates
+
+Only new files are indexed:
+
+```rust
+// Duplicate check before indexing
+if db.cloud_file_exists(&file.id) {
+    println!("[GDRIVE] Skipping already indexed file: {}", file.name);
+    continue;
+}
+```
+
+## File Deletion Support
+
+StreamVault detects when files are removed from Drive:
+
+```rust
+// gdrive.rs:494
+pub async fn delete_file(&self, file_id: &str) -> Result<(), String> {
+    let url = format!("{}/files/{}", DRIVE_API_BASE, file_id);
+    
+    let response = self.http_client
+        .delete(&url)
+        .header("Authorization", format!("Bearer {}", access_token))
+        .send()
+        .await?;
+    
+    // Returns 204 No Content on success
+}
+```
+
+<Warning>
+Deleted files are automatically removed from your library during the next change detection cycle.
+</Warning>
+
+## Streaming URLs
+
+Files are streamed directly from Google Drive without downloading:
+
+```rust
+// gdrive.rs:345
+pub async fn get_stream_url(&self, file_id: &str) -> Result<(String, String), String> {
+    let access_token = self.get_access_token().await?;
+    let url = format!("{}/files/{}?alt=media", DRIVE_API_BASE, file_id);
+    Ok((url, access_token))
+}
+```
+
+The access token is passed as an HTTP header to MPV for authenticated streaming.
+
+## Account Information
+
+View your connected Google account details:
+
+```rust
+// gdrive.rs:518
+pub struct DriveAccountInfo {
+    pub email: String,
+    pub display_name: Option<String>,
+    pub photo_url: Option<String>,
+    pub storage_used: Option<i64>,
+    pub storage_limit: Option<i64>,
+}
+```
+
+## Error Handling
+
+Robust error handling with automatic retries:
+
+- **Token Expiration**: Automatic refresh via backend
+- **Network Errors**: Connection timeout after 15s
+- **Rate Limiting**: Respects `Retry-After` headers
+- **API Errors**: Graceful degradation with user-friendly messages
+
+## Privacy & Security
+
+<Note>
+**Your Google credentials are never stored locally.** StreamVault uses OAuth2 tokens which can be revoked at any time from your Google Account settings.
+</Note>
+
+### Data Storage
+
+Locally stored data:
+- **Tokens**: `%APPDATA%/StreamVault/gdrive_tokens.json` (encrypted by OS)
+- **Database**: File metadata only (no video content)
+- **Image Cache**: Posters/thumbnails from TMDB
+
+### Permissions Required
+
+- `https://www.googleapis.com/auth/drive.readonly` - Read-only access to Drive files
+- `https://www.googleapis.com/auth/userinfo.email` - Display your email in settings
+
+## Troubleshooting
+
+### "Failed to connect to Google Drive"
+
+1. Check your internet connection
+2. Verify the backend server is accessible
+3. Try disconnecting and reconnecting in Settings
+
+### "No videos found during scan"
+
+1. Ensure video files are in supported formats
+2. Check that files aren't in the trash
+3. Verify OAuth permissions weren't revoked
+
+### "Changes not detected"
+
+1. Wait up to 5 seconds for the next poll
+2. Manually click "Update Library" to force a scan
+3. Check that the app is running (even if minimized)

@@ -1,0 +1,556 @@
+---
+title: MPV Playback Features
+description: Native media playback with resume support and progress tracking via IPC
+---
+
+## Overview
+
+StreamVault uses MPV as its media player, providing high-quality playback of any video format without transcoding. The integration uses named pipes (IPC) on Windows for bidirectional communication, enabling progress tracking, resume playback, and watch history.
+
+## MPV Integration
+
+StreamVault controls MPV through inter-process communication using Lua scripts.
+
+### IPC via Named Pipes
+
+On Windows, StreamVault uses named pipes for MPV communication:
+
+```rust
+// mpv_ipc.rs:218
+pub fn launch_mpv_with_tracking(
+    mpv_path: &str,
+    file_or_url: &str,
+    media_id: i64,
+    start_position: f64,
+    auth_header: Option<&str>,
+    cache_settings: Option<&CloudCacheSettings>,
+) -> Result<u32, String> {
+    // Create tracking script
+    let script_path = create_lua_script(media_id)?;
+    
+    // Build MPV command
+    let mut cmd = std::process::Command::new(mpv_path);
+    cmd.arg(format!("--script={}", script_path.to_string_lossy()));
+    
+    // Add resume position
+    if start_position > 0.0 {
+        cmd.arg(format!("--start={}", start_position as i64));
+    }
+    
+    // Spawn process
+    let child = cmd.spawn()?;
+    Ok(child.id())
+}
+```
+
+### Lua Tracking Script
+
+A Lua script runs inside MPV to save progress:
+
+```rust
+// mpv_ipc.rs:32
+fn get_lua_script_content(progress_file: &str) -> String {
+    format!(r#"
+    local progress_file = "{}"
+    local save_interval = 2 -- seconds
+    
+    local function get_progress_data()
+        local pos = mp.get_property_number("time-pos")
+        local duration = mp.get_property_number("duration")
+        local paused = mp.get_property_bool("pause") or false
+        local eof = mp.get_property_bool("eof-reached") or false
+        
+        return string.format(
+            '{{"position":%.3f,"duration":%.3f,"paused":%s,"eof_reached":%s,"quit_time":%d}}',
+            pos, duration,
+            paused and "true" or "false",
+            eof and "true" or "false",
+            os.time()
+        )
+    end
+    
+    local function save_progress()
+        local data = get_progress_data()
+        local file = io.open(progress_file, "w")
+        if file then
+            file:write(data)
+            file:close()
+        end
+    end
+    
+    -- Periodic save timer (every 2 seconds)
+    mp.add_periodic_timer(save_interval, save_progress)
+    
+    -- Save on quit
+    mp.register_event("shutdown", save_progress)
+    "#, progress_file)
+}
+```
+
+**Progress is saved:**
+- Every 2 seconds while playing
+- On pause/unpause
+- On seek
+- On file end
+- On MPV shutdown
+
+### Progress File Format
+
+```json
+{
+  "position": 1234.567,
+  "duration": 5400.0,
+  "paused": false,
+  "eof_reached": false,
+  "quit_time": 1678901234
+}
+```
+
+Stored at: `%APPDATA%/StreamVault/mpv_progress/{media_id}.json`
+
+## Supported Formats
+
+MPV supports virtually all video formats without transcoding:
+
+### Video Codecs
+- H.264 / AVC
+- H.265 / HEVC
+- VP8 / VP9
+- AV1
+- MPEG-2 / MPEG-4
+- XviD / DivX
+
+### Container Formats
+```rust
+// media_manager.rs:13
+const VIDEO_EXTENSIONS: &[&str] = &[
+    ".mkv",   // Matroska
+    ".mp4",   // MPEG-4
+    ".avi",   // Audio Video Interleave
+    ".mov",   // QuickTime
+    ".webm",  // WebM
+    ".m4v",   // iTunes Video
+    ".wmv",   // Windows Media
+    ".flv",   // Flash Video
+    ".ts",    // MPEG Transport Stream
+    ".m2ts"   // Blu-ray BDAV
+];
+```
+
+### HDR Support
+- HDR10
+- HDR10+
+- Dolby Vision
+- HLG (Hybrid Log-Gamma)
+
+### Audio Codecs
+- AAC
+- MP3
+- FLAC
+- DTS / DTS-HD
+- TrueHD / Atmos
+- AC3 / EAC3
+- Opus
+- Vorbis
+
+<Note>
+MPV uses hardware acceleration when available (DXVA2, NVDEC, D3D11VA on Windows) for smooth playback of high-resolution content.
+</Note>
+
+## Resume Playback
+
+StreamVault automatically saves your position and resumes where you left off.
+
+### Progress Tracking
+
+```rust
+// mpv_ipc.rs:150
+pub fn read_mpv_progress(media_id: i64) -> Option<MpvProgressInfo> {
+    let progress_file = get_progress_file_path(media_id);
+    
+    if !progress_file.exists() {
+        return None;
+    }
+    
+    let content = fs::read_to_string(&progress_file).ok()?;
+    serde_json::from_str(&content).ok()
+}
+```
+
+### Progress Info Structure
+
+```rust
+// mpv_ipc.rs:11
+pub struct MpvProgressInfo {
+    pub position: f64,      // Current position in seconds
+    pub duration: f64,      // Total duration in seconds
+    pub paused: bool,       // Is playback paused?
+    pub eof_reached: bool,  // Did playback reach the end?
+    pub quit_time: Option<i64>, // Unix timestamp when MPV quit
+}
+```
+
+### Database Persistence
+
+Progress is saved to the database after MPV exits:
+
+```rust
+// mpv_ipc.rs:393
+pub fn monitor_mpv_and_save_progress(
+    db: &Database,
+    media_id: i64,
+    pid: u32,
+) -> MpvLaunchResult {
+    // Wait for MPV to exit
+    while is_mpv_running(pid) {
+        std::thread::sleep(Duration::from_millis(500));
+        
+        // Periodically save to database
+        if let Some(progress) = read_mpv_progress(media_id) {
+            if progress.duration > 0.0 {
+                let _ = db.update_progress(media_id, progress.position, progress.duration);
+            }
+        }
+    }
+    
+    // Final save after MPV exits
+    if let Some(progress) = read_mpv_progress(media_id) {
+        if progress.duration > 0.0 {
+            let _ = db.update_progress(media_id, progress.position, progress.duration);
+        }
+    }
+}
+```
+
+### Resume Threshold
+
+Progress is cleared if you've watched ≥95% of the video:
+
+```rust
+// database.rs:531
+pub fn update_progress(&self, media_id: i64, current_time: f64, duration: f64) -> Result<()> {
+    let progress_percent = if duration > 0.0 {
+        current_time / duration
+    } else {
+        0.0
+    };
+    
+    if progress_percent >= 0.95 {
+        // Mark as completed - clear resume position
+        self.conn.execute(
+            "UPDATE media SET resume_position_seconds = 0, duration_seconds = ?, 
+             last_watched = datetime('now') WHERE id = ?",
+            params![duration, media_id],
+        )?;
+    } else {
+        // Save progress
+        self.conn.execute(
+            "UPDATE media SET resume_position_seconds = ?, duration_seconds = ?, 
+             last_watched = datetime('now') WHERE id = ?",
+            params![current_time, duration, media_id],
+        )?;
+    }
+}
+```
+
+## Watch History
+
+StreamVault tracks all your viewing activity.
+
+### History Storage
+
+```sql
+-- database.rs:169
+CREATE TABLE media (
+    -- ... other columns
+    resume_position_seconds REAL DEFAULT 0,
+    last_watched TIMESTAMP DEFAULT NULL,
+    duration_seconds REAL DEFAULT 0
+);
+```
+
+### Fetching History
+
+```rust
+// database.rs:438
+pub fn get_watch_history(&self, limit: i32) -> Result<Vec<MediaItem>> {
+    let mut stmt = self.conn.prepare(
+        "SELECT
+            m.id,
+            CASE WHEN m.media_type = 'tvepisode' THEN p.title ELSE m.title END as title,
+            CASE WHEN m.media_type = 'tvepisode' THEN p.year ELSE m.year END as year,
+            m.overview,
+            CASE WHEN m.media_type = 'tvepisode' THEN p.poster_path ELSE m.poster_path END as poster_path,
+            m.file_path,
+            m.media_type,
+            m.duration_seconds,
+            m.resume_position_seconds,
+            m.last_watched,
+            m.season_number,
+            m.episode_number,
+            m.parent_id,
+            CASE WHEN m.media_type = 'tvepisode' THEN p.tmdb_id ELSE m.tmdb_id END as tmdb_id,
+            m.episode_title,
+            m.still_path
+         FROM media m
+         LEFT JOIN media p ON m.parent_id = p.id
+         WHERE m.last_watched IS NOT NULL
+           AND m.media_type IN ('movie', 'tvepisode')
+         ORDER BY m.last_watched DESC
+         LIMIT ?"
+    )?;
+    
+    stmt.query_map(params![limit], Self::map_media_item)?;
+}
+```
+
+**History shows:**
+- Last watched timestamp
+- Resume position (if not completed)
+- Progress percentage
+- For TV episodes: Series title, S01E01 format, episode thumbnail
+
+### Clear History
+
+```rust
+// database.rs:583
+pub fn clear_all_watch_history(&self) -> Result<i32> {
+    let count = self.conn.execute(
+        "UPDATE media SET last_watched = NULL, resume_position_seconds = 0 
+         WHERE last_watched IS NOT NULL",
+        [],
+    )?;
+    Ok(count as i32)
+}
+```
+
+## Videasy Streaming Player
+
+For online content, StreamVault includes an embedded Videasy player as a fallback.
+
+### Streaming History
+
+Separate table for online streaming progress:
+
+```sql
+-- database.rs:268
+CREATE TABLE streaming_history (
+    id INTEGER PRIMARY KEY,
+    tmdb_id TEXT NOT NULL,
+    media_type TEXT NOT NULL,
+    title TEXT NOT NULL,
+    poster_path TEXT,
+    season INTEGER,
+    episode INTEGER,
+    resume_position_seconds REAL DEFAULT 0,
+    duration_seconds REAL DEFAULT 0,
+    last_watched TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+### Save Streaming Progress
+
+```rust
+// database.rs:595
+pub fn save_streaming_progress(
+    &self,
+    tmdb_id: &str,
+    media_type: &str,
+    title: &str,
+    poster_path: Option<&str>,
+    season: Option<i32>,
+    episode: Option<i32>,
+    position: f64,
+    duration: f64,
+) -> Result<()> {
+    // Upsert logic with COALESCE for NULL-safe comparison
+    let existing_id: Option<i64> = self.conn.query_row(
+        "SELECT id FROM streaming_history
+         WHERE tmdb_id = ? AND media_type = ?
+         AND COALESCE(season, -1) = COALESCE(?, -1)
+         AND COALESCE(episode, -1) = COALESCE(?, -1)",
+        params![tmdb_id, media_type, season, episode],
+        |row| row.get(0),
+    ).ok();
+    
+    if let Some(id) = existing_id {
+        // Update existing
+        self.conn.execute(
+            "UPDATE streaming_history SET
+                title = ?,
+                poster_path = COALESCE(?, poster_path),
+                resume_position_seconds = ?,
+                duration_seconds = CASE WHEN ? > 0 THEN ? ELSE duration_seconds END,
+                last_watched = datetime('now')
+             WHERE id = ?",
+            params![title, poster_path, position, duration, duration, id],
+        )?;
+    } else {
+        // Insert new
+        self.conn.execute(
+            "INSERT INTO streaming_history (tmdb_id, media_type, title, poster_path, season, episode, resume_position_seconds, duration_seconds, last_watched)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))",
+            params![tmdb_id, media_type, title, poster_path, season, episode, position, duration],
+        )?;
+    }
+}
+```
+
+## Cloud Streaming
+
+StreamVault can stream directly from Google Drive without downloading.
+
+### Authentication Headers
+
+MPV receives the access token for authenticated streaming:
+
+```rust
+// mpv_ipc.rs:280
+if let Some(header) = auth_header {
+    cmd.arg(format!("--http-header-fields={}", header));
+}
+```
+
+The header format:
+```
+Authorization: Bearer ya29.a0AfH6SMBx...
+```
+
+### Streaming Options
+
+```rust
+// mpv_ipc.rs:293
+if is_url && !use_cached {
+    // Memory cache for smooth streaming
+    cmd.arg("--demuxer-max-bytes=500MiB");
+    cmd.arg("--demuxer-max-back-bytes=100MiB");
+    cmd.arg("--cache=yes");
+}
+```
+
+**Cache Settings:**
+- Forward buffer: 500 MiB
+- Backward buffer: 100 MiB
+- Adaptive streaming enabled
+
+### Disk Caching
+
+Optional persistent cache for cloud videos:
+
+```rust
+// mpv_ipc.rs:297
+if let Some(cache) = cache_settings {
+    if cache.enabled && !cache.cache_dir.is_empty() {
+        let media_cache_dir = std::path::Path::new(&cache.cache_dir)
+            .join(format!("media_{}", media_id));
+        
+        let cache_file = media_cache_dir.join("video.mp4");
+        
+        if !cache_file.exists() {
+            cmd.arg(format!("--stream-record={}", cache_file.to_string_lossy()));
+        }
+    }
+}
+```
+
+**Benefits:**
+- Play cached files instantly on re-watch
+- No re-download from cloud
+- Survives app restart
+
+## Process Monitoring
+
+StreamVault monitors the MPV process to detect when playback ends.
+
+### Windows Process Check
+
+```rust
+// mpv_ipc.rs:363
+pub fn is_mpv_running(pid: u32) -> bool {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::Foundation::{CloseHandle, WAIT_TIMEOUT};
+        use windows_sys::Win32::System::Threading::{OpenProcess, WaitForSingleObject, PROCESS_SYNCHRONIZE};
+        
+        unsafe {
+            let handle = OpenProcess(PROCESS_SYNCHRONIZE, 0, pid);
+            if handle == 0 {
+                return false;
+            }
+            let result = WaitForSingleObject(handle, 0);
+            CloseHandle(handle);
+            result == WAIT_TIMEOUT
+        }
+    }
+}
+```
+
+### Background Monitoring
+
+```rust
+// mpv_ipc.rs:401
+while is_mpv_running(pid) {
+    std::thread::sleep(Duration::from_millis(500));
+    
+    // Periodically save progress to database
+    if let Some(progress) = read_mpv_progress(media_id) {
+        if progress.duration > 0.0 {
+            let _ = db.update_progress(media_id, progress.position, progress.duration);
+        }
+    }
+}
+```
+
+Progress is saved:
+- Every 500ms while MPV is running
+- One final time after MPV exits (with 300ms grace period)
+
+## MPV Options
+
+StreamVault configures MPV with optimal settings:
+
+```rust
+// mpv_ipc.rs:290
+cmd.arg("--save-position-on-quit=no");  // We handle resume ourselves
+cmd.arg("--keep-open=no");              // Close when video ends
+```
+
+### Windows Console Hiding
+
+```rust
+// mpv_ipc.rs:342
+#[cfg(windows)]
+{
+    use std::os::windows::process::CommandExt;
+    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+}
+```
+
+This prevents a console window from appearing during playback.
+
+## Troubleshooting
+
+### "MPV not found"
+
+1. Install MPV from [mpv.io](https://mpv.io)
+2. Add MPV to system PATH
+3. Or set custom path in Settings
+
+### "Playback stuttering"
+
+1. Enable disk cache in Settings for cloud files
+2. Check your internet speed (minimum 10 Mbps for HD)
+3. Reduce MPV cache size if low on RAM
+
+### "Progress not saving"
+
+1. Check permissions for `%APPDATA%/StreamVault/`
+2. Ensure MPV isn't being force-killed
+3. Wait a few seconds after closing MPV for final save
+
+### "Audio/video out of sync"
+
+This is an MPV issue, not StreamVault. Try:
+1. Updating MPV to the latest version
+2. Using a different video output driver in MPV config
+3. Disabling hardware acceleration if corrupted frames appear

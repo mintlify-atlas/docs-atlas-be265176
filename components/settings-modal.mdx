@@ -1,0 +1,608 @@
+---
+title: 'SettingsModal'
+description: 'Configure app settings, API keys, cloud storage, and beta features'
+icon: 'gear'
+---
+
+## Overview
+
+The `SettingsModal` component provides a comprehensive settings interface organized into tabs for General settings, Beta features, Updates, Cloud storage, API configuration, and Advanced/Developer options.
+
+<img
+  src="/images/components/settings-modal.png"
+  alt="Settings modal with sidebar navigation and tabbed content"
+  className="rounded-lg"
+/>
+
+## Features
+
+- **Tabbed Interface**: Sidebar navigation with 7 sections
+- **MPV Configuration**: Path selection with auto-detection
+- **TMDB API Setup**: Built-in or custom API key with radio selection
+- **Auto-Start**: Windows startup integration
+- **Google Drive**: Full cloud storage configuration panel
+- **Beta Features**: Toggle experimental features (Watch Together, Social, Discover)
+- **Updates**: Check for updates, download, and install automatically
+- **Advanced Tools**: Cleanup missing metadata, reset app to factory state
+- **Developer Mode**: Backend URL configuration (dev builds only)
+
+## Component Interface
+
+```typescript
+interface SettingsModalProps {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onRestartOnboarding?: () => void
+  onViewUpdateNotes?: () => void
+  initialTab?: SettingsSection
+  tabVisibility?: TabVisibility
+  onTabVisibilityChange?: (visibility: TabVisibility) => void
+  onLogout?: () => void
+  betaEnabled?: boolean
+  onBetaToggle?: (enabled: boolean) => void
+  streamTabEnabled?: boolean
+  onStreamTabToggle?: (enabled: boolean) => void
+  autoCheckUpdate?: boolean
+  onSimulateUpdate?: () => void
+}
+
+type SettingsSection = 'general' | 'beta' | 'updates' | 'cloud' | 'api' | 'danger' | 'dev'
+```
+
+### Props
+
+<ParamField path="open" type="boolean" required>
+  Controls modal visibility
+</ParamField>
+
+<ParamField path="onOpenChange" type="(open: boolean) => void" required>
+  Callback when modal is opened or closed
+</ParamField>
+
+<ParamField path="onRestartOnboarding" type="() => void">
+  Callback to restart the onboarding tour
+</ParamField>
+
+<ParamField path="onViewUpdateNotes" type="() => void">
+  Callback to open the "What's New" modal
+</ParamField>
+
+<ParamField path="initialTab" type="SettingsSection">
+  Initial tab to display when modal opens
+</ParamField>
+
+<ParamField path="betaEnabled" type="boolean" default="false">
+  Current beta features toggle state
+</ParamField>
+
+<ParamField path="onBetaToggle" type="(enabled: boolean) => void">
+  Callback when beta features are enabled/disabled
+</ParamField>
+
+<ParamField path="streamTabEnabled" type="boolean" default="false">
+  Current state of the Discover/Stream tab visibility
+</ParamField>
+
+<ParamField path="onStreamTabToggle" type="(enabled: boolean) => void">
+  Callback when Discover tab is toggled
+</ParamField>
+
+<ParamField path="autoCheckUpdate" type="boolean" default="false">
+  Auto-trigger update check when opening Updates tab
+</ParamField>
+
+## Usage Example
+
+```tsx
+import { SettingsModal } from '@/components/SettingsModal'
+import { useState } from 'react'
+
+function App() {
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [betaEnabled, setBetaEnabled] = useState(false)
+  const [streamTabEnabled, setStreamTabEnabled] = useState(false)
+
+  return (
+    <>
+      <button onClick={() => setSettingsOpen(true)}>
+        Open Settings
+      </button>
+
+      <SettingsModal
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+        betaEnabled={betaEnabled}
+        onBetaToggle={setBetaEnabled}
+        streamTabEnabled={streamTabEnabled}
+        onStreamTabToggle={setStreamTabEnabled}
+        onRestartOnboarding={() => startOnboarding()}
+        onViewUpdateNotes={() => showUpdateNotes()}
+      />
+    </>
+  )
+}
+```
+
+## Settings Sections
+
+### General Settings
+
+The General tab includes:
+
+#### Run on Startup
+
+```typescript
+const toggleAutoStart = async (checked: boolean) => {
+  if (checked) {
+    await invoke('plugin:autostart|enable')
+    toast({ title: "Auto Startup Enabled" })
+  } else {
+    await invoke('plugin:autostart|disable')
+    toast({ title: "Auto Startup Disabled" })
+  }
+  setAutoStart(checked)
+}
+```
+
+#### Browser Streaming Toggle
+
+Controls whether streaming links can open in the default browser:
+
+```typescript
+const toggleBrowserOpen = (checked: boolean) => {
+  setBrowserOpenEnabled(checked)
+  toast({
+    title: checked ? "Browser Streaming Enabled" : "Browser Streaming Disabled",
+    description: checked
+      ? "Streaming links can now open in your default browser."
+      : "Browser streaming is blocked until re-enabled in Settings."
+  })
+}
+```
+
+#### MPV Executable Path
+
+```tsx
+<div className="flex gap-2">
+  <Input
+    value={config.mpv_path || ""}
+    onChange={(e) => setConfig({ ...config, mpv_path: e.target.value })}
+    placeholder="C:\path\to\mpv.exe"
+  />
+  <Button variant="outline" onClick={browseMpvPath}>
+    <FolderOpen className="h-4 w-4" />
+  </Button>
+  <Button
+    variant="outline"
+    onClick={handleAutoDetectMpv}
+    disabled={detectingMpv}
+  >
+    <RefreshCw className={cn("w-4 h-4", detectingMpv && "animate-spin")} />
+    {detectingMpv ? "Detecting..." : "Detect"}
+  </Button>
+</div>
+```
+
+The **Auto-Detect** button searches common installation paths:
+- `C:\Program Files\mpv\mpv.exe`
+- `C:\Program Files (x86)\mpv\mpv.exe`
+- `%LOCALAPPDATA%\mpv\mpv.exe`
+- `%APPDATA%\mpv\mpv.exe`
+
+#### Onboarding Overview
+
+Button to restart the onboarding tour:
+
+```tsx
+<Button
+  variant="outline"
+  onClick={() => {
+    onOpenChange(false)
+    onRestartOnboarding?.()
+  }}
+>
+  <Sparkles className="w-4 h-4" />
+  Start Tour
+</Button>
+```
+
+### Beta Features
+
+The Beta tab manages experimental features:
+
+#### Master Toggle
+
+Enabling beta features shows a confirmation dialog:
+
+```typescript
+const confirmed = window.confirm(
+  "Beta Features Warning\n\n" +
+  "These features are experimental and for public testing only:\n\n" +
+  "• Watch Together - Watch with friends in sync\n" +
+  "• Social Features - Friends, chat, activity feed\n\n" +
+  "These features may not work properly, may have bugs, " +
+  "and could stop working at any time.\n\n" +
+  "Do you want to enable beta features?"
+)
+```
+
+#### Individual Features
+
+1. **Discover / Stream Online**
+   - Toggles the Discover tab in sidebar
+   - Search and stream online movies/TV shows
+   - Status: `EXPERIMENTAL`
+
+2. **Watch Together**
+   - Synchronized playback with friends
+   - Room creation and joining
+   - Status: `UNSTABLE`
+   - Requires beta master toggle
+
+3. **Social - Friends & Chat**
+   - Add friends, send messages
+   - See what friends are watching
+   - Status: `UNSTABLE`
+   - Requires beta master toggle
+
+4. **Activity Feed**
+   - Real-time friend activity updates
+   - Status: `UNSTABLE`
+   - Requires beta master toggle
+
+### Updates & Security
+
+The Updates tab provides version management:
+
+#### Check for Updates
+
+```typescript
+const handleCheckUpdate = async () => {
+  setCheckingUpdate(true)
+  const info = await checkForUpdates()
+  setUpdateInfo(info)
+  
+  if (!info.available) {
+    toast({ title: "Up to Date", description: `Version ${info.current_version}` })
+  }
+  setCheckingUpdate(false)
+}
+```
+
+#### Download and Install
+
+When an update is available:
+
+```typescript
+const handleDownloadAndInstall = async () => {
+  setDownloadingUpdate(true)
+  
+  // Listen for progress events
+  const unlisten = await listen<{ progress: number }>('update-download-progress', (event) => {
+    setDownloadProgress(event.payload.progress)
+  })
+
+  const installerPath = await downloadUpdate(updateInfo.download_url)
+  unlisten()
+
+  toast({ title: "Download Complete", description: "Installing update and restarting..." })
+  await installUpdate(installerPath)  // App restarts automatically
+}
+```
+
+Progress bar during download:
+
+```tsx
+<div className="w-full bg-muted rounded-full h-2">
+  <div
+    className="bg-white h-2 rounded-full transition-all duration-300"
+    style={{ width: `${downloadProgress}%` }}
+  />
+</div>
+<p className="text-xs text-center">
+  Downloading... {downloadProgress.toFixed(0)}%
+</p>
+```
+
+#### What's New
+
+Button to view release notes for the current version:
+
+```tsx
+<Button
+  onClick={() => {
+    onOpenChange(false)
+    onViewUpdateNotes?.()
+  }}
+>
+  <Eye className="w-4 h-4" />
+  View What's New
+</Button>
+```
+
+### Cloud Storage
+
+The Cloud tab renders the `GoogleDriveSettings` component:
+
+```tsx
+{activeSection === 'cloud' && (
+  <GoogleDriveSettings />
+)}
+```
+
+This includes:
+- OAuth connection flow
+- Account info display (email, storage usage)
+- Disconnect button
+- Cache settings (size, expiry)
+
+### API Keys
+
+The API tab manages TMDB configuration with radio selection:
+
+#### Built-in API Key (Default)
+
+```tsx
+<button
+  onClick={() => {
+    setUseOwnApiKey(false)
+    setConfig({ ...config, tmdb_api_key: "" })
+  }}
+  className={cn(
+    "w-full p-3 rounded-xl border text-left",
+    !useOwnApiKey
+      ? "border-white/30 bg-white/10"  // Selected
+      : "border-border bg-card/50"     // Unselected
+  )}
+>
+  <div className="flex items-center gap-3">
+    {/* Radio indicator */}
+    <div className="w-4 h-4 rounded-full border-2">
+      {!useOwnApiKey && <div className="w-2 h-2 rounded-full bg-white" />}
+    </div>
+    <div>
+      <span>Use Built-in API Key</span>
+      <span className="px-1.5 py-0.5 text-[10px] bg-green-500/20 text-green-400 rounded">
+        FREE
+      </span>
+      <p className="text-xs text-muted-foreground">
+        No setup needed. Shared across all users, so it may hit rate limits.
+      </p>
+    </div>
+  </div>
+</button>
+```
+
+#### Custom API Key (Recommended)
+
+```tsx
+<button onClick={() => setUseOwnApiKey(true)}>
+  <div className="flex items-center gap-3">
+    {/* Radio indicator */}
+    <div className="w-4 h-4 rounded-full border-2">
+      {useOwnApiKey && <div className="w-2 h-2 rounded-full bg-white" />}
+    </div>
+    <div>
+      <span>Use Your Own API Key</span>
+      <span className="px-1.5 py-0.5 text-[10px] bg-blue-500/20 text-blue-400 rounded">
+        RECOMMENDED
+      </span>
+      <p className="text-xs text-muted-foreground">
+        Get your own free key for unlimited requests with no rate limits.
+      </p>
+    </div>
+  </div>
+</button>
+
+{/* Input shown only when selected */}
+{useOwnApiKey && (
+  <Input
+    type="password"
+    value={config.tmdb_api_key || ""}
+    onChange={(e) => setConfig({ ...config, tmdb_api_key: e.target.value })}
+    placeholder="Enter your TMDB API key or Access Token"
+  />
+)}
+```
+
+Supports both:
+- **API Key** (v3 auth)
+- **Access Token** (v4 auth / Bearer token)
+
+Link to get key: [themoviedb.org/settings/api](https://www.themoviedb.org/settings/api)
+
+### Advanced Settings
+
+The Danger tab includes destructive operations:
+
+#### Cleanup Missing Metadata
+
+Removes orphaned database entries and cached images:
+
+```typescript
+const handleCleanupMissing = async () => {
+  setCleaningUp(true)
+  const result = await cleanupMissingMetadata()
+  
+  toast({
+    title: "Cleanup Complete",
+    description: result.message  // e.g., "Removed 5 missing titles"
+  })
+  
+  if (result.removed_count > 0) {
+    window.location.reload()  // Refresh UI
+  }
+  setCleaningUp(false)
+}
+```
+
+#### Reset App to Factory State
+
+Two-step confirmation:
+
+```tsx
+{!showResetConfirm ? (
+  <Button variant="destructive" onClick={() => setShowResetConfirm(true)}>
+    <Trash2 className="mr-2 h-4 w-4" />
+    Reset App to Factory State
+  </Button>
+) : (
+  <div className="space-y-3 p-4 bg-destructive/10 border border-destructive/30">
+    <p className="text-sm text-destructive text-center">
+      Are you absolutely sure? This will delete everything!
+    </p>
+    <div className="flex gap-2">
+      <Button variant="outline" onClick={() => setShowResetConfirm(false)}>
+        Cancel
+      </Button>
+      <Button variant="destructive" onClick={handleResetApp}>
+        {resetting ? "Resetting..." : "Yes, Delete Everything"}
+      </Button>
+    </div>
+  </div>
+)}
+```
+
+Reset deletes:
+- Library database
+- Watch history
+- Streaming history
+- Cached posters and thumbnails
+- All settings
+- Social connections
+
+### Developer Settings (Dev Mode Only)
+
+Only visible when `isDev` is true:
+
+#### Backend URL Configuration
+
+```tsx
+<Input
+  value={devAuthServerUrl}
+  onChange={(e) => setDevAuthServerUrl(e.target.value)}
+  placeholder="http://localhost:3000"
+/>
+
+<div className="flex gap-2">
+  <Button onClick={handleSaveDevSettings}>
+    <Save className="w-4 h-4 mr-2" />
+    Save Backend URL
+  </Button>
+  <Button variant="outline" onClick={handleResetDevSettings}>
+    Reset to Default
+  </Button>
+</div>
+```
+
+Allows testing with local backend servers during development.
+
+## State Persistence
+
+Settings are saved to `%APPDATA%/StreamVault/media_config.json`:
+
+```typescript
+const handleSave = async () => {
+  setLoading(true)
+  await saveConfig(config)
+  toast({ title: "Success", description: "Settings saved successfully" })
+  onOpenChange(false)
+  setLoading(false)
+}
+```
+
+## Layout & Styling
+
+### Sidebar Navigation
+
+```tsx
+<div className="flex max-h-[85vh]">
+  {/* Sidebar (240px) */}
+  <div className="w-56 bg-card/50 border-r border-border p-4">
+    <h2 className="text-lg font-semibold mb-6">Settings</h2>
+    
+    <nav className="space-y-1">
+      {sections.map(section => (
+        <button
+          onClick={() => setActiveSection(section.id)}
+          className={cn(
+            "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl",
+            activeSection === section.id
+              ? "bg-white/10 text-white"
+              : "text-muted-foreground hover:bg-muted/50"
+          )}
+        >
+          {section.icon}
+          <span className="text-sm font-medium">{section.label}</span>
+        </button>
+      ))}
+    </nav>
+  </div>
+
+  {/* Content Area (flex-1) */}
+  <div className="flex-1 overflow-y-auto p-6">
+    <AnimatePresence mode="wait">
+      {/* Section content */}
+    </AnimatePresence>
+  </div>
+</div>
+```
+
+### Section Icons
+
+```typescript
+const sections = [
+  { id: 'general', label: 'General', icon: <Settings /> },
+  { id: 'updates', label: 'Updates & Security', icon: <Shield /> },
+  { id: 'cloud', label: 'Cloud Storage', icon: <Cloud /> },
+  { id: 'api', label: 'API Keys', icon: <Key /> },
+  { id: 'danger', label: 'Advanced', icon: <AlertTriangle /> },
+  { id: 'beta', label: 'Beta', icon: <FlaskConical /> },
+  { id: 'dev', label: 'Developer', icon: <Code /> }  // Dev only
+]
+```
+
+## Animations
+
+Section transitions use Framer Motion:
+
+```tsx
+<AnimatePresence mode="wait">
+  {activeSection === 'general' && (
+    <motion.div
+      key="general"
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -10 }}
+      className="space-y-6"
+    >
+      {/* Section content */}
+    </motion.div>
+  )}
+</AnimatePresence>
+```
+
+## Accessibility
+
+- Semantic headings for each section
+- Form labels with `htmlFor` attributes
+- Keyboard navigation between tabs
+- Focus management when modal opens
+- Screen reader friendly toggle descriptions
+
+## Related Components
+
+<CardGroup cols={2}>
+  <Card title="GoogleDriveSettings" icon="cloud" href="/components/google-drive-settings">
+    Google Drive OAuth connection and configuration
+  </Card>
+  <Card title="UpdateNotesModal" icon="file-text" href="/components/update-notes-modal">
+    Display release notes for new versions
+  </Card>
+</CardGroup>
+
+## Source Code
+
+Location: `~/workspace/source/src/components/SettingsModal.tsx`
+
+The component is approximately 1,200+ lines including all tab sections and state management.

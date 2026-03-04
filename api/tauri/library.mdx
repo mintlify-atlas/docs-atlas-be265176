@@ -1,0 +1,405 @@
+---
+title: 'Library Management'
+description: 'Tauri commands for managing local and cloud media libraries'
+icon: 'folder-open'
+---
+
+## Overview
+
+Library management commands handle media items (movies, TV shows, episodes) stored locally or in Google Drive. All commands return Promise-based results through the Tauri IPC bridge.
+
+## Commands
+
+### get_library
+
+Retrieve library items filtered by media type.
+
+<CodeGroup>
+```rust Rust Signature
+#[tauri::command]
+async fn get_library(
+    state: State<'_, AppState>,
+    media_type: String,
+    search: Option<String>,
+) -> Result<Vec<database::MediaItem>, String>
+```
+
+```typescript TypeScript
+import { invoke } from '@tauri-apps/api/tauri';
+
+const movies = await invoke<MediaItem[]>('get_library', {
+  mediaType: 'movie',
+  search: 'Inception'
+});
+```
+</CodeGroup>
+
+<ParamField path="media_type" type="string" required>
+  Type of media to retrieve: `"movie"` or `"tv"`
+</ParamField>
+
+<ParamField path="search" type="string | null">
+  Optional search query to filter results by title
+</ParamField>
+
+<ResponseField name="MediaItem[]" type="array">
+  Array of media items matching the criteria
+  
+  <Expandable title="MediaItem fields">
+    <ResponseField name="id" type="number">
+      Unique database ID
+    </ResponseField>
+    <ResponseField name="title" type="string">
+      Media title
+    </ResponseField>
+    <ResponseField name="year" type="number | undefined">
+      Release year
+    </ResponseField>
+    <ResponseField name="poster_path" type="string | undefined">
+      Cached poster image path
+    </ResponseField>
+    <ResponseField name="media_type" type="'movie' | 'tvshow' | 'tvepisode'">
+      Type of media item
+    </ResponseField>
+    <ResponseField name="is_cloud" type="boolean | undefined">
+      Whether this is a cloud-stored file
+    </ResponseField>
+    <ResponseField name="cloud_file_id" type="string | undefined">
+      Google Drive file ID (for cloud media)
+    </ResponseField>
+    <ResponseField name="resume_position_seconds" type="number | undefined">
+      Last playback position
+    </ResponseField>
+    <ResponseField name="duration_seconds" type="number | undefined">
+      Total duration in seconds
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+### get_library_filtered
+
+Get library items with cloud storage filtering.
+
+<CodeGroup>
+```rust Rust Signature
+#[tauri::command]
+async fn get_library_filtered(
+    state: State<'_, AppState>,
+    media_type: String,
+    search: Option<String>,
+    is_cloud: Option<bool>,
+) -> Result<Vec<database::MediaItem>, String>
+```
+
+```typescript TypeScript
+// Get only cloud movies
+const cloudMovies = await invoke<MediaItem[]>('get_library_filtered', {
+  mediaType: 'movie',
+  search: null,
+  isCloud: true
+});
+
+// Get only local TV shows
+const localShows = await invoke<MediaItem[]>('get_library_filtered', {
+  mediaType: 'tv',
+  search: null,
+  isCloud: false
+});
+```
+</CodeGroup>
+
+<ParamField path="media_type" type="string" required>
+  Type of media: `"movie"` or `"tv"`
+</ParamField>
+
+<ParamField path="search" type="string | null">
+  Optional search query
+</ParamField>
+
+<ParamField path="is_cloud" type="boolean | null">
+  Filter by cloud storage:
+  - `true`: Only cloud media
+  - `false`: Only local media
+  - `null`: All media
+</ParamField>
+
+---
+
+### get_media_info
+
+Retrieve detailed information for a specific media item.
+
+<CodeGroup>
+```rust Rust Signature
+#[tauri::command]
+async fn get_media_info(
+    state: State<'_, AppState>,
+    media_id: i64,
+) -> Result<database::MediaItem, String>
+```
+
+```typescript TypeScript
+const media = await invoke<MediaItem>('get_media_info', {
+  mediaId: 123
+});
+```
+</CodeGroup>
+
+<ParamField path="media_id" type="number" required>
+  Database ID of the media item
+</ParamField>
+
+---
+
+### get_episodes
+
+Get all episodes for a TV show series.
+
+<CodeGroup>
+```rust Rust Signature
+#[tauri::command]
+async fn get_episodes(
+    state: State<'_, AppState>,
+    series_id: i64,
+) -> Result<Vec<database::MediaItem>, String>
+```
+
+```typescript TypeScript
+const episodes = await invoke<MediaItem[]>('get_episodes', {
+  seriesId: 456
+});
+```
+</CodeGroup>
+
+<ParamField path="series_id" type="number" required>
+  Database ID of the parent TV show
+</ParamField>
+
+<ResponseField name="MediaItem[]" type="array">
+  Array of episode items with `season_number`, `episode_number`, and `episode_title` fields populated
+</ResponseField>
+
+---
+
+### delete_media_files
+
+Permanently delete media files from disk or Google Drive.
+
+<CodeGroup>
+```rust Rust Signature
+#[tauri::command]
+async fn delete_media_files(
+    state: State<'_, AppState>,
+    media_ids: Vec<i64>,
+) -> Result<DeleteResponse, String>
+```
+
+```typescript TypeScript
+const result = await invoke<DeleteResponse>('delete_media_files', {
+  mediaIds: [123, 456, 789]
+});
+
+console.log(result.message); // "Successfully deleted 3 file(s)"
+```
+</CodeGroup>
+
+<ParamField path="media_ids" type="number[]" required>
+  Array of media IDs to delete
+</ParamField>
+
+<ResponseField name="DeleteResponse" type="object">
+  <Expandable title="Response fields">
+    <ResponseField name="success" type="boolean">
+      Whether all deletions succeeded
+    </ResponseField>
+    <ResponseField name="deleted_count" type="number">
+      Number of files successfully deleted
+    </ResponseField>
+    <ResponseField name="failed_count" type="number">
+      Number of files that failed to delete
+    </ResponseField>
+    <ResponseField name="message" type="string">
+      Human-readable result message
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<Note>
+  This permanently deletes files. Cloud files are removed from Google Drive. Local files bypass the recycle bin.
+</Note>
+
+---
+
+### get_resume_info
+
+Get playback resume information for a media item.
+
+<CodeGroup>
+```rust Rust Signature
+#[tauri::command]
+async fn get_resume_info(
+    state: State<'_, AppState>,
+    media_id: i64,
+) -> Result<database::ResumeInfo, String>
+```
+
+```typescript TypeScript
+const resumeInfo = await invoke<ResumeInfo>('get_resume_info', {
+  mediaId: 123
+});
+
+if (resumeInfo.has_progress) {
+  console.log(`Resume at ${resumeInfo.time_str} (${resumeInfo.progress_percent}%)`);
+}
+```
+</CodeGroup>
+
+<ParamField path="media_id" type="number" required>
+  Media item database ID
+</ParamField>
+
+<ResponseField name="ResumeInfo" type="object">
+  <Expandable title="Response fields">
+    <ResponseField name="has_progress" type="boolean">
+      Whether there is saved progress
+    </ResponseField>
+    <ResponseField name="position" type="number">
+      Current position in seconds
+    </ResponseField>
+    <ResponseField name="duration" type="number">
+      Total duration in seconds
+    </ResponseField>
+    <ResponseField name="time_str" type="string">
+      Formatted time string (e.g., "01:23:45")
+    </ResponseField>
+    <ResponseField name="progress_percent" type="number">
+      Progress percentage (0-100)
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+### update_resume_position
+
+Alias for `update_progress`. Updates the playback position for a media item.
+
+<CodeGroup>
+```rust Rust Signature
+#[tauri::command]
+async fn update_progress(
+    state: State<'_, AppState>,
+    media_id: i64,
+    current_time: f64,
+    duration: f64,
+) -> Result<ApiResponse, String>
+```
+
+```typescript TypeScript
+await invoke('update_progress', {
+  mediaId: 123,
+  currentTime: 3600.5, // 1 hour
+  duration: 7200.0     // 2 hours
+});
+```
+</CodeGroup>
+
+<ParamField path="media_id" type="number" required>
+  Media item ID
+</ParamField>
+
+<ParamField path="current_time" type="number" required>
+  Current playback position in seconds
+</ParamField>
+
+<ParamField path="duration" type="number" required>
+  Total duration in seconds
+</ParamField>
+
+<Note>
+  Progress is automatically reset to 0 when playback reaches 95% completion.
+</Note>
+
+---
+
+### mark_watched
+
+Mark a media item as fully watched (100% complete).
+
+<CodeGroup>
+```rust Rust Signature
+#[tauri::command]
+async fn mark_as_complete(
+    state: State<'_, AppState>,
+    media_id: i64,
+) -> Result<ApiResponse, String>
+```
+
+```typescript TypeScript
+await invoke('mark_as_complete', {
+  mediaId: 123
+});
+```
+</CodeGroup>
+
+<ParamField path="media_id" type="number" required>
+  Media item to mark as watched
+</ParamField>
+
+---
+
+### mark_unwatched
+
+Reset playback progress to unwatched state.
+
+<CodeGroup>
+```rust Rust Signature
+#[tauri::command]
+async fn clear_progress(
+    state: State<'_, AppState>,
+    media_id: i64,
+) -> Result<ApiResponse, String>
+```
+
+```typescript TypeScript
+await invoke('clear_progress', {
+  mediaId: 123
+});
+```
+</CodeGroup>
+
+<ParamField path="media_id" type="number" required>
+  Media item to reset
+</ParamField>
+
+---
+
+### get_watch_history
+
+Retrieve recently watched media items.
+
+<CodeGroup>
+```rust Rust Signature
+#[tauri::command]
+async fn get_watch_history(
+    state: State<'_, AppState>,
+    limit: Option<i32>,
+) -> Result<Vec<database::MediaItem>, String>
+```
+
+```typescript TypeScript
+const history = await invoke<MediaItem[]>('get_watch_history', {
+  limit: 50
+});
+```
+</CodeGroup>
+
+<ParamField path="limit" type="number">
+  Maximum number of items to return (default: 50)
+</ParamField>
+
+<ResponseField name="MediaItem[]" type="array">
+  Array of media items ordered by `last_watched` timestamp (most recent first)
+</ResponseField>

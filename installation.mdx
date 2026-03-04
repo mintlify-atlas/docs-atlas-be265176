@@ -1,0 +1,433 @@
+---
+title: Installation
+description: Install prerequisites and build StreamVault from source
+---
+
+## Prerequisites
+
+Before installing StreamVault, ensure you have the following dependencies installed:
+
+<AccordionGroup>
+  <Accordion title="Node.js v18+" icon="node-js">
+    **Required for**: Frontend development and build process
+    
+    Download from [nodejs.org](https://nodejs.org/) or install via package manager:
+    
+    <CodeGroup>
+    ```bash Windows (winget)
+    winget install OpenJS.NodeJS.LTS
+    ```
+    
+    ```bash macOS (Homebrew)
+    brew install node
+    ```
+    
+    ```bash Linux (Ubuntu/Debian)
+    curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
+    sudo apt-get install -y nodejs
+    ```
+    </CodeGroup>
+    
+    Verify installation:
+    ```bash
+    node --version  # Should be v18.0.0 or higher
+    npm --version
+    ```
+  </Accordion>
+
+  <Accordion title="Rust (latest stable)" icon="rust">
+    **Required for**: Backend compilation and Tauri framework
+    
+    Install Rust using rustup:
+    
+    <CodeGroup>
+    ```bash Windows
+    # Download and run rustup-init.exe from:
+    # https://rustup.rs/
+    
+    # Or use winget:
+    winget install Rustlang.Rustup
+    ```
+    
+    ```bash macOS/Linux
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+    ```
+    </CodeGroup>
+    
+    After installation, restart your terminal and verify:
+    ```bash
+    rustc --version
+    cargo --version
+    ```
+    
+    <Note>
+      The Rust installer will add `~/.cargo/bin` to your PATH automatically. You may need to restart your terminal for changes to take effect.
+    </Note>
+  </Accordion>
+
+  <Accordion title="MPV Media Player" icon="play">
+    **Required for**: Video playback functionality
+    
+    StreamVault uses MPV for all media playback. Install it for your platform:
+    
+    <Tabs>
+      <Tab title="Windows">
+        **Option 1: Direct download (recommended)**
+        
+        1. Download MPV from [mpv.io](https://mpv.io/installation/)
+        2. Or use pre-built Windows binaries from [SourceForge](https://sourceforge.net/projects/mpv-player-windows/files/)
+        3. Extract to a permanent location (e.g., `C:\Program Files\mpv\`)
+        4. Add the MPV directory to your system PATH:
+           - Open **System Properties** → **Environment Variables**
+           - Under **System variables**, select **Path** → **Edit**
+           - Click **New** and add the path to mpv.exe (e.g., `C:\Program Files\mpv`)
+           - Click **OK** to save
+        
+        **Option 2: Package managers**
+        
+        <CodeGroup>
+        ```bash Chocolatey
+        choco install mpv
+        ```
+        
+        ```bash Scoop
+        scoop install mpv
+        ```
+        
+        ```bash winget
+        winget install mpv.net
+        ```
+        </CodeGroup>
+        
+        <Tip>
+          StreamVault will auto-detect MPV in common installation locations, including Scoop, Chocolatey, and standard Program Files directories.
+        </Tip>
+      </Tab>
+      
+      <Tab title="macOS">
+        Install via Homebrew:
+        
+        ```bash
+        brew install mpv
+        ```
+        
+        Verify installation:
+        ```bash
+        mpv --version
+        which mpv  # Should show /opt/homebrew/bin/mpv or /usr/local/bin/mpv
+        ```
+      </Tab>
+      
+      <Tab title="Linux">
+        Install using your distribution's package manager:
+        
+        <CodeGroup>
+        ```bash Ubuntu/Debian
+        sudo apt update
+        sudo apt install mpv
+        ```
+        
+        ```bash Fedora
+        sudo dnf install mpv
+        ```
+        
+        ```bash Arch Linux
+        sudo pacman -S mpv
+        ```
+        </CodeGroup>
+        
+        Verify installation:
+        ```bash
+        mpv --version
+        which mpv  # Should show /usr/bin/mpv
+        ```
+      </Tab>
+    </Tabs>
+    
+    <Warning>
+      Without MPV installed, StreamVault will not be able to play any media files. Ensure MPV is properly installed and accessible in your system PATH.
+    </Warning>
+  </Accordion>
+</AccordionGroup>
+
+## Clone the repository
+
+<Steps>
+  <Step title="Clone from GitHub">
+    ```bash
+    git clone https://github.com/SlasshyOverhere/StreamVault.git
+    cd StreamVault
+    ```
+    
+    <Tip>
+      If you plan to contribute, fork the repository first and clone your fork instead.
+    </Tip>
+  </Step>
+  
+  <Step title="Install dependencies">
+    Install all Node.js dependencies using npm:
+    
+    ```bash
+    npm install
+    ```
+    
+    This will install:
+    - React 18 and React DOM
+    - TypeScript and type definitions
+    - Vite build tooling
+    - Tauri CLI and API bindings
+    - UI libraries (Radix UI, Framer Motion, Lucide icons)
+    - TailwindCSS and styling utilities
+    
+    The installation process will also download Rust dependencies for Tauri automatically.
+  </Step>
+</Steps>
+
+## Development setup
+
+<Steps>
+  <Step title="Configure environment (optional)">
+    If you're self-hosting the backend, create a `.env` file in the project root:
+    
+    ```bash .env
+    # Frontend environment variables
+    VITE_AUTH_SERVER_URL=https://your-backend-domain
+    ```
+    
+    And set Tauri-side environment variables before building:
+    
+    <CodeGroup>
+    ```bash Windows (PowerShell)
+    $env:STREAMVAULT_AUTH_SERVER_URL="https://your-backend-domain"
+    $env:STREAMVAULT_TMDB_PROXY_URL="https://your-backend-domain/api/tmdb"
+    $env:STREAMVAULT_WS_URL="wss://your-backend-domain/ws/watchtogether"
+    ```
+    
+    ```bash macOS/Linux
+    export STREAMVAULT_AUTH_SERVER_URL="https://your-backend-domain"
+    export STREAMVAULT_TMDB_PROXY_URL="https://your-backend-domain/api/tmdb"
+    export STREAMVAULT_WS_URL="wss://your-backend-domain/ws/watchtogether"
+    ```
+    </CodeGroup>
+    
+    <Note>
+      For most users, the default backend (`https://streamvault-backend-server.onrender.com`) will work out of the box. See [self-hosting guide](/guides/self-hosting) for custom backend setup.
+    </Note>
+  </Step>
+  
+  <Step title="Run in development mode">
+    Start both the Vite dev server and Tauri application:
+    
+    ```bash
+    npm run tauri dev
+    ```
+    
+    This command:
+    - Starts the Vite dev server on `http://localhost:3000`
+    - Compiles the Rust backend
+    - Launches the Tauri window with hot-reload enabled
+    - Watches for file changes in both frontend and backend code
+    
+    <Tip>
+      The first run will take longer as it compiles all Rust dependencies. Subsequent runs are much faster due to incremental compilation.
+    </Tip>
+  </Step>
+  
+  <Step title="Frontend-only development (optional)">
+    If you only need to work on the frontend without Tauri:
+    
+    ```bash
+    npm run dev
+    ```
+    
+    This starts just the Vite dev server at `http://localhost:3000`. Tauri commands will not be available in this mode.
+  </Step>
+</Steps>
+
+## Production build
+
+<Steps>
+  <Step title="Sync version numbers">
+    StreamVault automatically syncs version numbers between `package.json` and `src-tauri/Cargo.toml`:
+    
+    ```bash
+    npm run version:sync
+    ```
+    
+    Or bump the version and sync:
+    
+    ```bash
+    npm run version:bump patch  # or minor, major
+    ```
+  </Step>
+  
+  <Step title="Build the application">
+    Create a production build with platform-specific installers:
+    
+    ```bash
+    npm run tauri build
+    ```
+    
+    This command:
+    - Builds the optimized frontend bundle with Vite
+    - Compiles the Rust backend in release mode
+    - Creates platform-specific installers and executables
+    - Generates update manifests for auto-updates
+    
+    <Warning>
+      The first production build can take 5-10 minutes as Rust compiles all dependencies with optimizations. Grab a coffee!
+    </Warning>
+  </Step>
+  
+  <Step title="Locate build artifacts">
+    After building, find your application in:
+    
+    - **Executable**: `src-tauri/target/release/streamvault.exe` (Windows) or `streamvault` (macOS/Linux)
+    - **Installers**: `src-tauri/target/release/bundle/`
+      - Windows: `.msi` installer and `.exe` portable
+      - macOS: `.dmg` disk image and `.app` bundle
+      - Linux: `.deb`, `.AppImage`, or `.rpm` packages
+    
+    <CodeGroup>
+    ```bash Windows installer
+    src-tauri/target/release/bundle/msi/StreamVault_3.0.21_x64_en-US.msi
+    ```
+    
+    ```bash macOS installer
+    src-tauri/target/release/bundle/dmg/StreamVault_3.0.21_x64.dmg
+    ```
+    
+    ```bash Linux installer
+    src-tauri/target/release/bundle/deb/streamvault_3.0.21_amd64.deb
+    src-tauri/target/release/bundle/appimage/streamvault_3.0.21_amd64.AppImage
+    ```
+    </CodeGroup>
+  </Step>
+</Steps>
+
+## MPV configuration
+
+StreamVault will automatically detect MPV in the following locations:
+
+<Accordion title="Windows auto-detection paths">
+  - System PATH (via `where mpv.exe`)
+  - `C:\Program Files\mpv\mpv.exe`
+  - `C:\Program Files (x86)\mpv\mpv.exe`
+  - `C:\Program Files\mpv.net\mpv.exe`
+  - Scoop installations: `C:\Users\*\scoop\apps\mpv\current\mpv.exe`
+  - Chocolatey: `C:\ProgramData\chocolatey\bin\mpv.exe`
+  - Portable installations in common locations
+  - User profile: `C:\Users\*\AppData\Local\Programs\mpv\mpv.exe`
+  
+  <Note>
+    The application performs a deep search in `C:\Program Files`, `C:\`, and `D:\` directories up to 3 levels deep.
+  </Note>
+</Accordion>
+
+If MPV is not detected automatically, you can manually configure the path in **Settings** → **Player** after first launch.
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Rust compilation errors" icon="triangle-exclamation">
+    **Error**: `error: linking with 'link.exe' failed` (Windows)
+    
+    **Solution**: Install Visual Studio Build Tools
+    
+    1. Download [Visual Studio Build Tools](https://visualstudio.microsoft.com/downloads/)
+    2. Install "Desktop development with C++" workload
+    3. Restart your terminal and try again
+    
+    ---
+    
+    **Error**: `error: could not compile 'tauri'`
+    
+    **Solution**: Update Rust toolchain
+    ```bash
+    rustup update stable
+    ```
+  </Accordion>
+  
+  <Accordion title="Node.js version mismatch" icon="triangle-exclamation">
+    **Error**: `engine 'node' is incompatible`
+    
+    **Solution**: Upgrade Node.js to v18 or higher
+    
+    ```bash
+    node --version  # Check current version
+    ```
+    
+    Download the latest LTS from [nodejs.org](https://nodejs.org/) or use a version manager like nvm.
+  </Accordion>
+  
+  <Accordion title="MPV not found" icon="triangle-exclamation">
+    **Error**: "MPV player not found" when trying to play media
+    
+    **Solution 1**: Add MPV to system PATH
+    - Locate your `mpv.exe` installation
+    - Add the directory to your system PATH environment variable
+    - Restart StreamVault
+    
+    **Solution 2**: Manually configure MPV path
+    - Open StreamVault Settings
+    - Navigate to **Player** settings
+    - Click **Browse** and select `mpv.exe`
+    - Save and try playing media again
+  </Accordion>
+  
+  <Accordion title="Build artifacts not found" icon="triangle-exclamation">
+    **Error**: Can't find built application
+    
+    **Solution**: Check build output
+    
+    ```bash
+    # List build artifacts
+    ls src-tauri/target/release/
+    
+    # List installers
+    ls src-tauri/target/release/bundle/
+    ```
+    
+    Look for error messages in the build output. Common issues:
+    - Insufficient disk space
+    - Antivirus blocking compilation
+    - Missing system dependencies
+  </Accordion>
+</AccordionGroup>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card
+    title="Quickstart guide"
+    icon="rocket"
+    href="/quickstart"
+  >
+    Complete the onboarding and scan your first library
+  </Card>
+  <Card
+    title="Configuration"
+    icon="gear"
+    href="/configuration/settings"
+  >
+    Customize settings and configure integrations
+  </Card>
+  <Card
+    title="Google Drive setup"
+    icon="cloud"
+    href="/configuration/google-drive-setup"
+  >
+    Connect your Google Drive for cloud media indexing
+  </Card>
+  <Card
+    title="TMDB setup"
+    icon="film"
+    href="/configuration/tmdb-setup"
+  >
+    Get your TMDB API key for metadata fetching
+  </Card>
+</CardGroup>
+
+<Note>
+  **Need help?** Check the [troubleshooting guide](/guides/troubleshooting) or open an issue on [GitHub](https://github.com/SlasshyOverhere/StreamVault/issues).
+</Note>

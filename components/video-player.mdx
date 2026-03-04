@@ -1,0 +1,306 @@
+---
+title: VideoPlayer
+description: Built-in HTML5 video player with progress tracking and transcoding support
+---
+
+## Overview
+
+The `VideoPlayer` component is StreamVault's built-in video player, providing a full-featured HTML5 video experience with automatic transcoding fallback, progress tracking, and keyboard controls.
+
+## Features
+
+- **HTML5 Video Controls**: Custom UI with play/pause, seek, volume, and fullscreen
+- **Progress Tracking**: Automatic progress updates every 5 seconds
+- **Transcoding Fallback**: Auto-transcode unsupported formats using FFmpeg
+- **Keyboard Shortcuts**: Space/K to play/pause, F for fullscreen, M to mute, Arrow keys to seek
+- **Large File Support**: Chunked loading for files >4GB
+- **Blob URL Loading**: Local files loaded as blob URLs for browser compatibility
+
+## Component Interface
+
+### VideoPlayer.tsx
+
+```tsx
+interface VideoPlayerProps {
+  src: string              // File path or URL
+  title: string            // Display title
+  poster?: string          // Poster image URL
+  onClose: () => void      // Close handler
+  onProgress?: (currentTime: number, duration: number) => void
+  initialTime?: number     // Resume position in seconds
+  isCloud?: boolean        // Cloud streaming mode
+  accessToken?: string     // Auth token for cloud
+  mediaId?: number         // Media ID for transcoding
+}
+```
+
+**Source**: `/home/daytona/workspace/source/src/components/VideoPlayer.tsx:6-18`
+
+## Usage
+
+### Basic Playback
+
+```tsx
+import { VideoPlayer } from '@/components/VideoPlayer'
+
+function MediaPage() {
+  const [showPlayer, setShowPlayer] = useState(false)
+
+  return (
+    <>
+      <button onClick={() => setShowPlayer(true)}>
+        Play Video
+      </button>
+      
+      {showPlayer && (
+        <VideoPlayer
+          src="/path/to/video.mp4"
+          title="Movie Title"
+          poster="https://image.tmdb.org/poster.jpg"
+          onClose={() => setShowPlayer(false)}
+        />
+      )}
+    </>
+  )
+}
+```
+
+### Resume Playback with Progress
+
+```tsx
+const handlePlayWithProgress = () => {
+  <VideoPlayer
+    src={media.file_path}
+    title={media.title}
+    initialTime={media.current_position || 0}
+    onProgress={(currentTime, duration) => {
+      // Update progress in database
+      invoke('update_progress', {
+        mediaId: media.id,
+        currentTime,
+        duration
+      })
+    }}
+    onClose={() => setShowPlayer(false)}
+  />
+}
+```
+
+## Transcoding Support
+
+The player automatically transcodes unsupported formats using FFmpeg:
+
+### Auto-Transcode Formats
+
+```typescript
+const needsTranscode = [
+  'mkv', 'avi', 'wmv', 'flv', 'mov', 
+  'm2ts', 'ts', 'vob', 'divx', 'xvid', 'rmvb', 'rm'
+]
+```
+
+**Source**: `/home/daytona/workspace/source/src/components/VideoPlayer.tsx:106`
+
+### Transcode Flow
+
+```tsx
+const attemptTranscode = async (filePath: string) => {
+  try {
+    const result = await invoke<{ 
+      session_id: number
+      stream_url: string 
+    }>('start_transcode_stream', {
+      filePath: filePath,
+      startTime: initialTime > 0 ? initialTime : null
+    })
+    
+    setVideoSrc(result.stream_url)
+    return true
+  } catch (e) {
+    setError(
+      `Transcoding failed: ${e}. ` +
+      `Please configure FFmpeg in Settings > Player, ` +
+      `or use MPV/VLC player.`
+    )
+    return false
+  }
+}
+```
+
+**Source**: `/home/daytona/workspace/source/src/components/VideoPlayer.tsx:44-74`
+
+## Keyboard Shortcuts
+
+| Key | Action |
+|-----|--------|
+| `Space` / `K` | Toggle play/pause |
+| `F` | Toggle fullscreen |
+| `M` | Toggle mute |
+| `←` | Seek backward 10 seconds |
+| `→` | Seek forward 10 seconds |
+| `Esc` | Exit fullscreen or close player |
+
+**Implementation**: `/home/daytona/workspace/source/src/components/VideoPlayer.tsx:315-351`
+
+## Progress Tracking
+
+### Automatic Updates
+
+Progress is reported every 5 seconds while playing:
+
+```tsx
+useEffect(() => {
+  if (onProgress && currentTime > 0) {
+    const now = Date.now()
+    if (now - progressReportRef.current > 5000) {
+      progressReportRef.current = now
+      onProgress(currentTime, duration)
+    }
+  }
+}, [currentTime, duration, onProgress])
+```
+
+**Source**: `/home/daytona/workspace/source/src/components/VideoPlayer.tsx:354-362`
+
+## Video Loading Strategy
+
+### Chunked Loading
+
+For large files, video is loaded in 10MB chunks:
+
+```tsx
+const chunkSize = 10 * 1024 * 1024 // 10MB chunks
+const chunks: Uint8Array[] = []
+let offset = 0
+
+while (offset < fileSize) {
+  const chunk = await invoke<number[]>('read_video_chunk', {
+    filePath: src,
+    offset: offset,
+    chunkSize: Math.min(chunkSize, fileSize - offset)
+  })
+  
+  chunks.push(new Uint8Array(chunk))
+  offset += chunk.length
+}
+
+// Create blob URL
+const blob = new Blob(chunks, { type: mimeType })
+const url = URL.createObjectURL(blob)
+```
+
+**Source**: `/home/daytona/workspace/source/src/components/VideoPlayer.tsx:133-169`
+
+### MIME Type Detection
+
+```tsx
+let mimeType = 'video/mp4'
+if (ext === 'webm') mimeType = 'video/webm'
+else if (ext === 'm4v') mimeType = 'video/mp4'
+```
+
+**Source**: `/home/daytona/workspace/source/src/components/VideoPlayer.tsx:161-163`
+
+## VideasyPlayer (Streaming)
+
+For cloud streaming, use the `VideasyPlayer` component:
+
+```tsx
+import { VideasyPlayer } from '@/components/VideasyPlayer'
+
+<VideasyPlayer
+  tmdbId="123456"
+  mediaType="movie"
+  title="Movie Title"
+  onClose={() => setShowPlayer(false)}
+  onProgress={(timestamp, duration, progress) => {
+    console.log(`${progress}% watched`)
+  }}
+/>
+```
+
+### VideasyPlayer Interface
+
+```tsx
+interface VideasyPlayerProps {
+  tmdbId: string
+  mediaType: 'movie' | 'tv'
+  title: string
+  season?: number          // For TV shows
+  episode?: number         // For TV shows
+  initialProgress?: number // Resume percentage
+  onClose: () => void
+  onProgress?: (timestamp: number, duration: number, progress: number) => void
+}
+```
+
+**Source**: `/home/daytona/workspace/source/src/components/VideasyPlayer.tsx:6-15`
+
+### Progress Events
+
+Videasy sends progress updates via `postMessage`:
+
+```tsx
+interface VideasyProgressEvent {
+  id: string
+  type: 'movie' | 'tv' | 'anime'
+  progress: number      // Percentage (0-100)
+  timestamp: number     // Current time in seconds
+  duration: number      // Total duration in seconds
+  season?: number
+  episode?: number
+}
+```
+
+**Source**: `/home/daytona/workspace/source/src/components/VideasyPlayer.tsx:17-25`
+
+## Error Handling
+
+### Video Errors
+
+```tsx
+const handleVideoError = async (e: React.SyntheticEvent<HTMLVideoElement>) => {
+  const errorCode = e.currentTarget.error?.code
+  
+  // Error code 4 = MEDIA_ERR_SRC_NOT_SUPPORTED
+  if (errorCode === 4 && !transcodeAttempted && !isCloud) {
+    // Try transcoding
+    const success = await attemptTranscode(src)
+    if (success) return
+  }
+  
+  setError(
+    `Failed to play video: ${errorMessage}. ` +
+    `Try using MPV or VLC player instead.`
+  )
+}
+```
+
+**Source**: `/home/daytona/workspace/source/src/components/VideoPlayer.tsx:202-225`
+
+## Controls UI
+
+### Auto-Hide Controls
+
+Controls fade out after 3 seconds of inactivity:
+
+```tsx
+const startHideControlsTimer = useCallback(() => {
+  if (hideControlsTimeout.current) {
+    clearTimeout(hideControlsTimeout.current)
+  }
+  hideControlsTimeout.current = setTimeout(() => {
+    if (isPlaying) {
+      setShowControls(false)
+    }
+  }, 3000)
+}, [isPlaying])
+```
+
+**Source**: `/home/daytona/workspace/source/src/components/VideoPlayer.tsx:239-248`
+
+## Related Components
+
+- [ResumeDialog](/components/resume-dialog) - Resume playback dialog
+- [MPV Integration](/components/mpv-integration) - External MPV player
+- [Settings Modal](/components/settings-modal) - Configure player preferences

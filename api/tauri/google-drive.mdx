@@ -1,0 +1,409 @@
+---
+title: 'Google Drive Commands'
+description: 'Integrate with Google Drive for cloud media storage and streaming'
+icon: 'google-drive'
+---
+
+## Overview
+
+Google Drive commands handle OAuth authentication, folder browsing, file indexing, and cloud streaming for media stored in Google Drive.
+
+## Authentication
+
+### connect_google_drive
+
+Alias for `gdrive_start_auth` + `gdrive_complete_auth`. Start the OAuth flow.
+
+<CodeGroup>
+```rust Rust Signature
+#[tauri::command]
+async fn gdrive_start_auth() -> Result<String, String>
+```
+
+```typescript TypeScript
+import { invoke } from '@tauri-apps/api/tauri';
+
+// Step 1: Start auth flow (opens browser)
+const authUrl = await invoke<string>('gdrive_start_auth');
+console.log('Auth URL:', authUrl);
+
+// Step 2: Wait for callback (user completes auth in browser)
+const accountInfo = await invoke<DriveAccountInfo>('gdrive_complete_auth');
+console.log('Connected:', accountInfo.email);
+```
+</CodeGroup>
+
+<Info>
+  **OAuth Flow**:
+  1. `gdrive_start_auth` returns a Google OAuth URL and opens it in the default browser
+  2. User authenticates with Google
+  3. Backend server receives the code and redirects to `localhost:42069` with tokens
+  4. `gdrive_complete_auth` waits for this callback, stores tokens, and returns account info
+</Info>
+
+<ResponseField name="authUrl" type="string">
+  Google OAuth consent screen URL
+</ResponseField>
+
+---
+
+### gdrive_complete_auth
+
+Complete OAuth authentication (waits for callback from browser).
+
+<CodeGroup>
+```rust Rust Signature
+#[tauri::command]
+async fn gdrive_complete_auth(
+    state: State<'_, AppState>,
+) -> Result<gdrive::DriveAccountInfo, String>
+```
+</CodeGroup>
+
+<ResponseField name="DriveAccountInfo" type="object">
+  <Expandable title="Response fields">
+    <ResponseField name="email" type="string">
+      Google account email
+    </ResponseField>
+    <ResponseField name="display_name" type="string | null">
+      User's display name
+    </ResponseField>
+    <ResponseField name="photo_url" type="string | null">
+      Profile photo URL
+    </ResponseField>
+    <ResponseField name="storage_used" type="number | null">
+      Storage used in bytes
+    </ResponseField>
+    <ResponseField name="storage_limit" type="number | null">
+      Storage quota in bytes
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+### disconnect_google_drive
+
+Revoke OAuth tokens and disconnect.
+
+<CodeGroup>
+```rust Rust Signature
+#[tauri::command]
+async fn gdrive_disconnect(
+    state: State<'_, AppState>,
+) -> Result<ApiResponse, String>
+```
+
+```typescript TypeScript
+await invoke('gdrive_disconnect');
+```
+</CodeGroup>
+
+---
+
+### get_drive_account_info
+
+Get current Google Drive account information.
+
+<CodeGroup>
+```rust Rust Signature
+#[tauri::command]
+async fn gdrive_get_account_info(
+    state: State<'_, AppState>,
+) -> Result<gdrive::DriveAccountInfo, String>
+```
+
+```typescript TypeScript
+const info = await invoke<DriveAccountInfo>('gdrive_get_account_info');
+console.log(`Storage: ${info.storage_used} / ${info.storage_limit} bytes`);
+```
+</CodeGroup>
+
+---
+
+### gdrive_is_connected
+
+Check if authenticated to Google Drive.
+
+<CodeGroup>
+```rust Rust Signature
+#[tauri::command]
+async fn gdrive_is_connected(
+    state: State<'_, AppState>,
+) -> Result<bool, String>
+```
+
+```typescript TypeScript
+const isConnected = await invoke<boolean>('gdrive_is_connected');
+```
+</CodeGroup>
+
+---
+
+## Folder Management
+
+### scan_cloud_library
+
+Alias for `gdrive_scan_folder`. Scan a Google Drive folder and index all video files.
+
+<CodeGroup>
+```rust Rust Signature
+#[tauri::command]
+async fn gdrive_scan_folder(
+    state: State<'_, AppState>,
+    window: Window,
+    folder_id: String,
+    folder_name: String,
+) -> Result<CloudIndexResult, String>
+```
+
+```typescript TypeScript
+const result = await invoke<CloudIndexResult>('gdrive_scan_folder', {
+  folderId: '1abc_XYZ',
+  folderName: 'My Movies'
+});
+
+console.log(`Indexed ${result.indexed_count} files (${result.movies_count} movies, ${result.tv_count} TV)`);
+```
+</CodeGroup>
+
+<ParamField path="folder_id" type="string" required>
+  Google Drive folder ID
+</ParamField>
+
+<ParamField path="folder_name" type="string" required>
+  Folder name (for display/logging)
+</ParamField>
+
+<ResponseField name="CloudIndexResult" type="object">
+  <Expandable title="Response fields">
+    <ResponseField name="success" type="boolean">
+      Whether scan succeeded
+    </ResponseField>
+    <ResponseField name="indexed_count" type="number">
+      Number of new files indexed
+    </ResponseField>
+    <ResponseField name="skipped_count" type="number">
+      Number of files already in library
+    </ResponseField>
+    <ResponseField name="movies_count" type="number">
+      New movies added
+    </ResponseField>
+    <ResponseField name="tv_count" type="number">
+      New TV episodes added
+    </ResponseField>
+    <ResponseField name="message" type="string">
+      Human-readable summary
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<Info>
+  **Auto-Detection**: The scanner parses filenames to detect:
+  - Movies: `Movie Title (2023).mkv`
+  - TV Shows: `Show Name S01E05.mkv`
+  
+  It fetches metadata from TMDB and downloads posters automatically.
+</Info>
+
+---
+
+### get_cloud_stream_url
+
+Alias for `gdrive_get_stream_url`. Get a temporary streaming URL for a Google Drive file.
+
+<CodeGroup>
+```rust Rust Signature
+#[tauri::command]
+async fn gdrive_get_stream_url(
+    state: State<'_, AppState>,
+    file_id: String,
+) -> Result<(String, String), String>
+```
+
+```typescript TypeScript
+const [streamUrl, accessToken] = await invoke<[string, string]>(
+  'gdrive_get_stream_url',
+  { fileId: 'abc123_file_id' }
+);
+
+// Use in video player with Authorization header
+const headers = {
+  'Authorization': `Bearer ${accessToken}`
+};
+```
+</CodeGroup>
+
+<ParamField path="file_id" type="string" required>
+  Google Drive file ID
+</ParamField>
+
+<ResponseField name="tuple" type="[string, string]">
+  Returns `[stream_url, access_token]`
+  
+  <Expandable title="Return values">
+    <ResponseField name="stream_url" type="string">
+      Direct download URL (valid for ~1 hour)
+    </ResponseField>
+    <ResponseField name="access_token" type="string">
+      OAuth access token to include in `Authorization: Bearer <token>` header
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<Warning>
+  Streaming URLs expire after approximately 1 hour. Access tokens must be included in all video chunk requests.
+</Warning>
+
+---
+
+### delete_cloud_file
+
+Alias for Google Drive file deletion (handled by `delete_media_files` command).
+
+See [Library Management - delete_media_files](/api/tauri/library#delete_media_files)
+
+---
+
+### gdrive_list_folders
+
+List folders in Google Drive.
+
+<CodeGroup>
+```rust Rust Signature
+#[tauri::command]
+async fn gdrive_list_folders(
+    state: State<'_, AppState>,
+    parent_id: Option<String>,
+) -> Result<Vec<gdrive::DriveItem>, String>
+```
+
+```typescript TypeScript
+// List root folders
+const folders = await invoke<DriveItem[]>('gdrive_list_folders', {
+  parentId: null
+});
+
+// List subfolders
+const subfolders = await invoke<DriveItem[]>('gdrive_list_folders', {
+  parentId: 'folder_id_here'
+});
+```
+</CodeGroup>
+
+<ParamField path="parent_id" type="string | null">
+  Parent folder ID, or `null` for root
+</ParamField>
+
+---
+
+### gdrive_list_video_files
+
+List all video files in a folder.
+
+<CodeGroup>
+```rust Rust Signature
+#[tauri::command]
+async fn gdrive_list_video_files(
+    state: State<'_, AppState>,
+    folder_id: String,
+    recursive: bool,
+) -> Result<Vec<gdrive::DriveItem>, String>
+```
+
+```typescript TypeScript
+const videos = await invoke<DriveItem[]>('gdrive_list_video_files', {
+  folderId: 'abc123',
+  recursive: true  // Include subfolders
+});
+```
+</CodeGroup>
+
+<ParamField path="folder_id" type="string" required>
+  Folder ID to scan
+</ParamField>
+
+<ParamField path="recursive" type="boolean" required>
+  Whether to scan subfolders
+</ParamField>
+
+<Info>
+  Only returns files with video MIME types: `video/mp4`, `video/x-matroska`, `video/webm`, etc.
+</Info>
+
+---
+
+## Change Detection
+
+### check_cloud_changes
+
+Poll Google Drive for new or changed video files (uses Changes API).
+
+<CodeGroup>
+```rust Rust Signature
+#[tauri::command]
+async fn check_cloud_changes(
+    state: State<'_, AppState>,
+    window: Window,
+) -> Result<CloudIndexResult, String>
+```
+
+```typescript TypeScript
+const result = await invoke<CloudIndexResult>('check_cloud_changes');
+
+if (result.indexed_count > 0) {
+  console.log(`${result.indexed_count} new files added!`);
+}
+```
+</CodeGroup>
+
+<Info>
+  **How it works**:
+  1. Stores a "changes token" after each poll
+  2. On next poll, fetches only files that changed since the last token
+  3. Automatically indexes new video files
+  4. Sends desktop notifications for new content
+  5. Much more efficient than re-scanning entire folders
+</Info>
+
+<Note>
+  StreamVault polls for changes every 5 seconds automatically in the background. You rarely need to call this manually.
+</Note>
+
+---
+
+## Events
+
+### cloud-scan-complete
+
+Emitted when a folder scan finishes.
+
+<CodeGroup>
+```typescript TypeScript
+import { listen } from '@tauri-apps/api/event';
+
+await listen<{
+  folder: string;
+  indexed: number;
+  skipped: number;
+  movies: number;
+  tv: number;
+}>('cloud-scan-complete', (event) => {
+  console.log(`Scan complete: ${event.payload.folder}`);
+});
+```
+</CodeGroup>
+
+---
+
+### cloud-indexing-started
+
+Emitted when change detection finds new files.
+
+<CodeGroup>
+```typescript TypeScript
+await listen<{ count: number }>('cloud-indexing-started', (event) => {
+  console.log(`Indexing ${event.payload.count} new files...`);
+});
+```
+</CodeGroup>

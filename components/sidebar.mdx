@@ -1,0 +1,496 @@
+---
+title: 'Sidebar'
+description: 'Navigation sidebar with library views, cloud status, and settings'
+icon: 'sidebar'
+---
+
+## Overview
+
+The `Sidebar` component provides the main navigation interface for StreamVault. It features view selection, Google Drive status, storage usage indicators, and responsive collapsing behavior.
+
+<img
+  src="/images/components/sidebar.png"
+  alt="Sidebar showing navigation items, active view highlighting, and cloud storage status"
+  className="rounded-lg"
+/>
+
+## Features
+
+- **View Navigation**: Home, Google Drive, Discover, AI Chat, Social, History
+- **Active View Highlighting**: Animated pill indicator with glow effect
+- **Responsive Collapsing**: Auto-collapse on small screens, manual toggle on larger screens
+- **Cloud Storage Status**: Google Drive account info and storage usage bar
+- **Sync Library Button**: Manual cloud library indexing with loading state
+- **Tooltips**: Hover tooltips in collapsed mode
+- **Beta Feature Badges**: "NEW" badges for experimental features
+- **Settings Button**: Quick access to settings modal
+- **Smooth Animations**: Framer Motion for width transitions and active states
+
+## Component Interface
+
+```typescript
+interface SidebarProps {
+  className?: string
+  currentView: string
+  setView: (view: string) => void
+  onOpenSettings: () => void
+  onCloudScan?: () => void
+  theme?: 'dark' | 'light'
+  toggleTheme?: () => void
+  isScanning?: boolean
+  isCloudIndexing?: boolean
+  scanProgress?: {
+    current: number
+    total: number
+  } | null
+  showCloudTab?: boolean
+  showStreamTab?: boolean
+  betaEnabled?: boolean
+}
+```
+
+### Props
+
+<ParamField path="currentView" type="string" required>
+  The currently active view ID (e.g., "home", "cloud", "history")
+</ParamField>
+
+<ParamField path="setView" type="(view: string) => void" required>
+  Callback when a navigation item is clicked to change views
+</ParamField>
+
+<ParamField path="onOpenSettings" type="() => void" required>
+  Callback to open the settings modal
+</ParamField>
+
+<ParamField path="onCloudScan" type="() => void">
+  Optional callback to trigger manual cloud library sync
+</ParamField>
+
+<ParamField path="isScanning" type="boolean" default="false">
+  Whether local library scan is in progress
+</ParamField>
+
+<ParamField path="isCloudIndexing" type="boolean" default="false">
+  Whether cloud library indexing is in progress (shows spinner)
+</ParamField>
+
+<ParamField path="scanProgress" type="{ current: number; total: number } | null">
+  Progress information for local library scanning
+</ParamField>
+
+<ParamField path="showCloudTab" type="boolean" default="true">
+  Whether to show the Google Drive tab
+</ParamField>
+
+<ParamField path="showStreamTab" type="boolean" default="false">
+  Whether to show the Discover/Stream tab (beta feature)
+</ParamField>
+
+<ParamField path="betaEnabled" type="boolean" default="false">
+  Whether beta features (AI Chat, Social) should be visible
+</ParamField>
+
+<ParamField path="className" type="string">
+  Additional CSS classes for the sidebar container
+</ParamField>
+
+## Usage Example
+
+```tsx
+import { Sidebar } from '@/components/Sidebar'
+import { useState } from 'react'
+
+function App() {
+  const [currentView, setCurrentView] = useState('home')
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [isCloudIndexing, setIsCloudIndexing] = useState(false)
+  const [betaEnabled, setBetaEnabled] = useState(false)
+  const [streamTabEnabled, setStreamTabEnabled] = useState(false)
+
+  const handleCloudScan = async () => {
+    setIsCloudIndexing(true)
+    await indexGoogleDrive()
+    setIsCloudIndexing(false)
+  }
+
+  return (
+    <div className="flex h-screen">
+      <Sidebar
+        currentView={currentView}
+        setView={setCurrentView}
+        onOpenSettings={() => setSettingsOpen(true)}
+        onCloudScan={handleCloudScan}
+        isCloudIndexing={isCloudIndexing}
+        betaEnabled={betaEnabled}
+        showStreamTab={streamTabEnabled}
+      />
+      
+      <main className="flex-1">
+        {/* View content */}
+      </main>
+    </div>
+  )
+}
+```
+
+## Navigation Items
+
+Menu items are configured dynamically:
+
+```typescript
+const menuItems = [
+  { id: "home", label: "Home", icon: Home },
+  { id: "cloud", label: "Google Drive", icon: Cloud, hidden: !showCloudTab },
+  { id: "stream", label: "Discover", icon: Globe, hidden: !showStreamTab },
+  { id: "ai", label: "AI Chat", icon: Bot, hidden: !betaEnabled, isNew: true },
+  { id: "social", label: "Social", icon: Users, hidden: !betaEnabled },
+  { id: "history", label: "History", icon: History },
+].filter(item => !item.hidden)
+```
+
+### View IDs
+
+- `home` - Main library view (Movies, TV Shows)
+- `cloud` - Google Drive library
+- `stream` - Discover/Stream online content (beta)
+- `ai` - AI Chat interface (beta)
+- `social` - Social features (beta)
+- `history` - Watch history
+
+## Responsive Behavior
+
+### Auto-Collapse
+
+The sidebar automatically collapses on screens smaller than 800px:
+
+```typescript
+const [windowWidth, setWindowWidth] = useState(() => window.innerWidth)
+const isForcedCollapsed = windowWidth < 800
+```
+
+### Manual Collapse
+
+Users can manually toggle collapse on larger screens:
+
+```typescript
+const [isManualCollapsed, setIsManualCollapsed] = useState(() => {
+  return window.localStorage.getItem("sidebar-collapsed") === "1"
+})
+
+const isCollapsed = isForcedCollapsed || isManualCollapsed
+```
+
+Collapse state is persisted in `localStorage`.
+
+### Width Calculation
+
+```typescript
+const sidebarWidth = isCollapsed 
+  ? (isForcedCollapsed ? 68 : 72)  // Icon-only mode
+  : (windowWidth < 1100 ? 240 : 280)  // Expanded mode
+```
+
+Smooth animated transitions:
+
+```tsx
+<motion.aside
+  animate={{ width: sidebarWidth }}
+  transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+>
+```
+
+## Active View Highlighting
+
+Active navigation items have:
+
+1. **Background glow** with blur effect
+2. **Left pill indicator** with shadow
+3. **White text** color
+4. **Border highlight**
+
+```tsx
+{isActive && (
+  <>
+    <motion.div
+      layoutId="active-glow"
+      className="absolute inset-0 rounded-xl bg-white/5 blur-md"
+      transition={{ type: "spring", stiffness: 300, damping: 30 }}
+    />
+    <motion.div
+      layoutId="active-pill"
+      className="absolute left-0 inset-y-0 my-auto w-1 h-6 bg-white rounded-r-full shadow-[0_0_15px_rgba(255,255,255,0.5)]"
+      transition={{ type: "spring", stiffness: 300, damping: 30 }}
+    />
+  </>
+)}
+```
+
+The `layoutId` prop enables smooth animations when switching between views.
+
+## Google Drive Integration
+
+### Account Status
+
+Fetches and displays Google Drive connection status:
+
+```typescript
+useEffect(() => {
+  const fetchGdriveInfo = async () => {
+    const connected = await isGDriveConnected()
+    setGdriveConnected(connected)
+    
+    if (connected) {
+      const info = await getGDriveAccountInfo()
+      setGdriveInfo(info)  // { email, storage_used, storage_limit }
+    }
+  }
+  
+  fetchGdriveInfo()
+  const interval = setInterval(fetchGdriveInfo, 60000)  // Refresh every minute
+  return () => clearInterval(interval)
+}, [])
+```
+
+### Sync Library Button
+
+Only shown when Google Drive is connected and sidebar is expanded:
+
+```tsx
+{gdriveConnected && onCloudScan && !isCollapsed && (
+  <button
+    onClick={onCloudScan}
+    disabled={isCloudIndexing || isScanning}
+    className="w-full flex items-center justify-between px-4 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.06] hover:bg-white/[0.08]"
+  >
+    <div className="flex items-center gap-3">
+      <RotateCw className={cn("w-4 h-4 text-white", isCloudIndexing && "animate-spin")} />
+      <span className="text-xs font-bold text-neutral-300">Sync Library</span>
+    </div>
+    <div className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+  </button>
+)}
+```
+
+### Storage Usage Bar
+
+Displays storage quota with animated progress bar:
+
+```tsx
+{gdriveInfo && gdriveInfo.storage_used !== undefined && !isCollapsed && (
+  <div className="px-1 space-y-2">
+    <div className="flex justify-between items-end">
+      <span className="text-[10px] font-bold text-neutral-500 uppercase">
+        Cloud Storage
+      </span>
+      <span className="text-[10px] font-bold text-white bg-white/10 px-1.5 py-0.5 rounded">
+        {Math.round((gdriveInfo.storage_used / gdriveInfo.storage_limit) * 100)}%
+      </span>
+    </div>
+    
+    <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden border border-white/[0.03]">
+      <motion.div
+        className="h-full bg-gradient-to-r from-neutral-400 to-white rounded-full"
+        initial={{ width: 0 }}
+        animate={{ width: `${Math.min((gdriveInfo.storage_used / gdriveInfo.storage_limit) * 100, 100)}%` }}
+        transition={{ duration: 1, ease: "easeOut" }}
+      />
+    </div>
+    
+    <div className="flex justify-between text-[10px] text-neutral-400">
+      <span>{formatStorageSize(gdriveInfo.storage_used)} used</span>
+      <span>{formatStorageSize(gdriveInfo.storage_limit - gdriveInfo.storage_used)} left</span>
+    </div>
+  </div>
+)}
+```
+
+## Beta Feature Badges
+
+New beta features display a "NEW" badge:
+
+```tsx
+{ id: "ai", label: "AI Chat", icon: Bot, isNew: true }
+```
+
+Badge rendering:
+
+```tsx
+{!isCollapsed && item.isNew && (
+  <span className="ml-auto rounded-full px-2 py-0.5 text-[9px] font-bold tracking-[0.14em] uppercase border border-amber-400/45 bg-amber-400/15 text-amber-300">
+    New
+  </span>
+)}
+```
+
+In collapsed mode, the badge appears in the tooltip.
+
+## Tooltips (Collapsed Mode)
+
+When collapsed, each button shows a tooltip on hover:
+
+```tsx
+{isCollapsed && (
+  <div className="absolute left-full ml-4 z-[60] whitespace-nowrap rounded-lg border border-white/10 bg-[#141414] px-3 py-2 shadow-2xl pointer-events-none opacity-0 translate-x-1 transition-all duration-200 group-hover:opacity-100 group-hover:translate-x-0">
+    <span className="text-xs font-semibold text-white">Open {item.label}</span>
+    {item.isNew && (
+      <span className="text-xs font-bold text-amber-300 tracking-wider">{" • NEW"}</span>
+    )}
+  </div>
+)}
+```
+
+Tooltips use CSS transitions with a 100ms delay on hover.
+
+## Footer Actions
+
+### Expanded Mode
+
+Two-button grid layout:
+
+```tsx
+<div className="grid grid-cols-2 gap-2">
+  {/* Settings Button */}
+  <button onClick={onOpenSettings} className="group h-11 rounded-xl">
+    <Settings className="h-4.5 w-4.5 transition-transform group-hover:rotate-45" />
+    <span className="text-xs font-semibold">Settings</span>
+  </button>
+
+  {/* Collapse Button */}
+  <button
+    onClick={() => setIsManualCollapsed(true)}
+    disabled={!canToggleCollapse}
+  >
+    <ChevronLeft className="h-4.5 w-4.5" />
+    <span className="text-xs font-semibold">Collapse</span>
+  </button>
+</div>
+```
+
+### Collapsed Mode
+
+Stacked icon-only buttons with tooltips:
+
+```tsx
+<div className="space-y-1.5">
+  {/* Settings */}
+  <button onClick={onOpenSettings} title="Open settings">
+    <Settings className="h-4.5 w-4.5" />
+  </button>
+
+  {/* Expand */}
+  <button onClick={() => setIsManualCollapsed(false)}>
+    <ChevronRight className="h-4.5 w-4.5" />
+  </button>
+</div>
+```
+
+## Styling & Theme
+
+### Background
+
+```css
+bg-[#0D0D0D]/80 backdrop-blur-2xl
+border-r border-white/[0.05]
+shadow-2xl
+```
+
+### Glossy Overlay
+
+```tsx
+<div className="absolute inset-0 bg-gradient-to-b from-white/[0.02] to-transparent pointer-events-none" />
+```
+
+### Navigation Button States
+
+```typescript
+// Default
+text-neutral-500 hover:text-neutral-200 hover:bg-white/[0.03]
+
+// Active
+bg-white/[0.08] text-white shadow-[0_0_20px_rgba(255,255,255,0.05)] border border-white/10
+```
+
+## Accessibility
+
+- Semantic `<nav>` element for navigation items
+- `<aside>` element for sidebar container
+- `title` attributes on buttons in collapsed mode
+- Keyboard navigation support
+- Focus states on interactive elements
+- `aria-label` on icon-only buttons (recommended enhancement)
+
+## Performance Optimization
+
+### Window Resize Listener
+
+```typescript
+useEffect(() => {
+  const handleResize = () => {
+    setWindowWidth(window.innerWidth)
+  }
+
+  handleResize()  // Initial call
+  window.addEventListener("resize", handleResize)
+  return () => window.removeEventListener("resize", handleResize)
+}, [])
+```
+
+### LocalStorage Persistence
+
+```typescript
+useEffect(() => {
+  window.localStorage.setItem("sidebar-collapsed", isManualCollapsed ? "1" : "0")
+}, [isManualCollapsed])
+```
+
+## Animations
+
+### Width Transition
+
+```tsx
+<motion.aside
+  animate={{ width: sidebarWidth }}
+  transition={{ 
+    duration: 0.3, 
+    ease: [0.22, 1, 0.36, 1]  // Custom cubic-bezier easing
+  }}
+>
+```
+
+### Active Indicator
+
+Spring-based animation for smooth, natural movement:
+
+```typescript
+transition={{ 
+  type: "spring", 
+  stiffness: 300, 
+  damping: 30 
+}}
+```
+
+### Storage Bar Fill
+
+```typescript
+initial={{ width: 0 }}
+animate={{ width: `${percentage}%` }}
+transition={{ duration: 1, ease: "easeOut" }}
+```
+
+## Related Components
+
+<CardGroup cols={2}>
+  <Card title="SettingsModal" icon="gear" href="/components/settings-modal">
+    Comprehensive settings interface opened from sidebar footer
+  </Card>
+  <Card title="GoogleDriveSettings" icon="cloud" href="/components/google-drive-settings">
+    Google Drive OAuth and storage configuration
+  </Card>
+</CardGroup>
+
+## Source Code
+
+Location: `~/workspace/source/src/components/Sidebar.tsx`
+
+The component is approximately 323 lines including responsive logic and Google Drive integration.

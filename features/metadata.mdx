@@ -1,0 +1,496 @@
+---
+title: TMDB Metadata Fetching
+description: Automatic metadata enrichment with posters, backdrops, and episode thumbnails
+---
+
+## Overview
+
+StreamVault uses The Movie Database (TMDB) API to fetch rich metadata including titles, posters, backdrops, overviews, ratings, and episode thumbnails. The system includes intelligent title matching, image caching, and fallback strategies for maximum accuracy.
+
+## TMDB API Integration
+
+StreamVault supports both API keys and access tokens for TMDB authentication.
+
+### Authentication Methods
+
+```rust
+// tmdb.rs:163
+fn is_access_token(credential: &str) -> bool {
+    credential.starts_with("eyJ")  // JWT tokens start with eyJ
+}
+```
+
+**API Key** (recommended for personal use):
+```rust
+format!("https://api.themoviedb.org/3{}?api_key={}&{}", path, api_key, params)
+```
+
+**Access Token** (for OAuth2):
+```rust
+client.get(url)
+    .header("Authorization", format!("Bearer {}", token))
+    .send()
+```
+
+### Default TMDB Token Fallback
+
+If no API key is provided, StreamVault uses a backend proxy:
+
+```rust
+// tmdb.rs:11
+const BACKEND_PROXY_CREDENTIAL: &str = "__TMDB_BACKEND_PROXY__";
+const DEFAULT_TMDB_PROXY_BASE_URL: &str = "https://streamvault-backend-server.onrender.com/api/tmdb";
+
+pub fn get_tmdb_credential(user_key: &str) -> String {
+    let trimmed = user_key.trim();
+    if trimmed.is_empty() {
+        BACKEND_PROXY_CREDENTIAL.to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+```
+
+<Note>
+The backend proxy allows StreamVault to work out-of-the-box without requiring users to get their own TMDB API key.
+</Note>
+
+## Metadata Search Strategies
+
+StreamVault uses a multi-strategy approach to maximize match accuracy.
+
+### 6-Strategy Search Process
+
+```rust
+// tmdb.rs:454
+pub fn search_metadata(
+    api_key: &str,
+    title: &str,
+    media_type: &str,
+    year: Option<i32>,
+    image_cache_dir: &str,
+) -> Result<Option<TmdbMetadata>, Box<dyn std::error::Error + Send + Sync>>
+```
+
+<Steps>
+  <Step title="Strategy 1: Type + Year">
+    Search with specified media type (movie/tv) and exact year:
+
+    ```rust
+    if let Some(y) = year {
+        for variation in &variations {
+            if let Ok(Some(result)) = do_search(api_key, variation, media_type, Some(y), image_cache_dir, true) {
+                return Ok(Some(result));
+            }
+        }
+    }
+    ```
+  </Step>
+
+  <Step title="Strategy 2: Type Only">
+    Search with media type but no year constraint:
+
+    ```rust
+    for variation in &variations {
+        if let Ok(Some(result)) = do_search(api_key, variation, media_type, None, image_cache_dir, true) {
+            return Ok(Some(result));
+        }
+    }
+    ```
+  </Step>
+
+  <Step title="Strategy 3: Alternative Type">
+    Try the opposite media type (TV → Movie, Movie → TV):
+
+    ```rust
+    let alt_type = if media_type == "movie" { "tv" } else { "movie" };
+    for variation in &variations {
+        if let Ok(Some(result)) = do_search(api_key, variation, alt_type, year, image_cache_dir, true) {
+            return Ok(Some(result));
+        }
+    }
+    ```
+  </Step>
+
+  <Step title="Strategy 4: Multi-Search">
+    Search across all media types simultaneously:
+
+    ```rust
+    for variation in &variations {
+        if let Ok(Some(result)) = do_multi_search(api_key, variation, media_type, image_cache_dir) {
+            return Ok(Some(result));
+        }
+    }
+    ```
+  </Step>
+
+  <Step title="Strategy 5: First Word Only">
+    For numeric or short titles (e.g., "1899"):
+
+    ```rust
+    let first = words[0];
+    if first.len() >= 3 || first.chars().all(|c| c.is_ascii_digit()) {
+        if let Ok(Some(result)) = do_search(api_key, first, media_type, None, image_cache_dir, false) {
+            if is_reasonable_match(first, &result.title) {
+                return Ok(Some(result));
+            }
+        }
+    }
+    ```
+  </Step>
+
+  <Step title="Strategy 6: Relaxed Search">
+    Lower similarity threshold for edge cases:
+
+    ```rust
+    for variation in &variations {
+        if let Ok(Some(result)) = do_search(api_key, variation, media_type, None, image_cache_dir, false) {
+            return Ok(Some(result));
+        }
+    }
+    ```
+  </Step>
+</Steps>
+
+### Title Variations
+
+StreamVault generates multiple title variations to improve matching:
+
+```rust
+// tmdb.rs:368
+fn extract_title_variations(title: &str) -> Vec<String> {
+    let mut variations = Vec::new();
+    
+    // 1. Original title
+    variations.push(title.to_string());
+    
+    // 2. Minimally cleaned (remove brackets at end)
+    let minimal = minimal_clean_title(title);
+    
+    // 3. Spaces instead of dots/underscores
+    let spaced = title.replace('.', " ").replace('_', " ");
+    
+    // 4. Extract from patterns like "Title S01E01" or "Title.2019"
+    // 5. Remove "The" prefix
+    // 6. Handle & vs and
+    
+    variations
+}
+```
+
+## Movie vs TV Show Detection
+
+StreamVault automatically determines the media type based on filename patterns:
+
+### TV Episode Patterns
+
+```rust
+// media_manager.rs:761
+let strict_patterns: Vec<Regex> = vec![
+    // S01E01, S1E1, etc.
+    Regex::new(r"(?i)^(?P<title>.+?)[.\s_-]+S(?P<season>\d{1,2})E(?P<episode>\d{1,3})")?,
+    
+    // Season 1 Episode 1
+    Regex::new(r"(?i)^(?P<title>.+?)[.\s_-]+Season\s*(?P<season>\d{1,2})[.\s_-]+Episode\s*(?P<episode>\d{1,3})")?,
+    
+    // 1x01 format
+    Regex::new(r"(?i)^(?P<title>.+?)[.\s_-]+(?P<season>\d{1,2})x(?P<episode>\d{2,3})")?,
+];
+```
+
+### Movie Detection
+
+If no TV patterns match, it's treated as a movie:
+
+```rust
+// media_manager.rs:914
+fn parse_as_movie(filename: &str) -> ParsedMedia {
+    let clean_name = filename.replace('.', " ").replace('_', " ");
+    let (title, year) = extract_year_from_title(&clean_name);
+    let title = clean_junk_from_title(&title);
+    
+    ParsedMedia {
+        title,
+        year,
+        media_type: MediaParseType::Movie,
+        season: None,
+        episode: None,
+        episode_end: None,
+    }
+}
+```
+
+## Episode Thumbnails
+
+TV episodes include individual thumbnails from TMDB's `still_path` field.
+
+### Fetching Episode Metadata
+
+```rust
+// tmdb.rs:1361
+pub fn fetch_season_episodes(
+    api_key: &str,
+    tmdb_id: &str,
+    season_number: i32,
+    series_title: &str,
+    image_cache_dir: &str,
+) -> Result<TmdbSeasonInfo, Box<dyn std::error::Error + Send + Sync>> {
+    let url = build_tmdb_url(
+        &format!("/tv/{}/season/{}", tmdb_id, season_number),
+        api_key,
+        "language=en-US"
+    );
+    
+    // Returns episodes with still_path for thumbnails
+}
+```
+
+### Episode Info Structure
+
+```rust
+// tmdb.rs:91
+pub struct TmdbEpisodeInfo {
+    pub episode_number: i32,
+    pub season_number: i32,
+    pub name: String,
+    pub overview: Option<String>,
+    pub still_path: Option<String>,  // Episode thumbnail
+    pub air_date: Option<String>,
+}
+```
+
+### Still Image Caching
+
+Episode thumbnails are cached with organized folder structure:
+
+```rust
+// tmdb.rs:1421
+for ep in season_data.episodes {
+    let still_path = if let Some(ref path) = ep.still_path {
+        cache_image_organized(
+            path,
+            image_cache_dir,
+            series_title,
+            ImageType::EpisodeBanner {
+                season: ep.season_number,
+                episode: ep.episode_number,
+            },
+        )
+    } else {
+        None
+    };
+}
+```
+
+Images are saved as:
+```
+image_cache/
+  breaking_bad/
+    breaking_bad_s01e01_xyz123_banner.jpg
+    breaking_bad_s01e02_abc456_banner.jpg
+```
+
+## Image Caching
+
+All images are downloaded once and cached locally for offline access.
+
+### Organized Cache Structure
+
+```rust
+// tmdb.rs:1194
+pub fn cache_image_organized(
+    image_path: &str,
+    cache_dir: &str,
+    title: &str,
+    image_type: ImageType,
+) -> Option<String> {
+    let slug = create_slug(title);  // "breaking_bad"
+    let source_tag = image_cache_tag(image_path);  // "xyz123"
+    
+    let (subfolder, filename) = match image_type {
+        ImageType::SeriesBanner => {
+            (Some(slug.clone()), format!("{}_banner.jpg", slug))
+        }
+        ImageType::EpisodeBanner { season, episode } => {
+            (Some(slug.clone()), format!("{}_s{}e{}_{}_banner.jpg", slug, season, episode, source_tag))
+        }
+        ImageType::MovieBanner => {
+            (None, format!("{}_{}_banner.jpg", slug, source_tag))
+        }
+    };
+}
+```
+
+### Multi-Size Fallback
+
+Images are fetched with multiple size options:
+
+```rust
+// tmdb.rs:983
+fn cache_image_with_fallback(image_path: &str, cache_dir: &str) -> Option<String> {
+    let sizes = ["w500", "w342", "w185", "original"];
+    
+    for size in &sizes {
+        match cache_image(image_path, cache_dir, size) {
+            Ok(path) => return Some(path),
+            Err(e) => continue,
+        }
+    }
+    None
+}
+```
+
+### Image Types
+
+```rust
+// tmdb.rs:1305
+pub enum ImageType {
+    SeriesBanner,                              // TV show poster
+    EpisodeBanner { season: i32, episode: i32 }, // Episode thumbnail
+    MovieBanner,                               // Movie poster
+}
+```
+
+## Fix Match Feature
+
+Manually correct misidentified media by providing a TMDB ID or URL.
+
+### Supported Input Formats
+
+```rust
+// tmdb.rs:1076
+fn extract_id_from_input(input: &str) -> (String, &str) {
+    // Pure numeric ID: "12345" → ("12345", "tmdb")
+    if input.chars().all(|c| c.is_ascii_digit()) {
+        return (input.to_string(), "tmdb");
+    }
+    
+    // IMDB ID: "tt1234567" → ("tt1234567", "imdb")
+    if let Some(caps) = Regex::new(r"(tt\d+)").ok()?.captures(input) {
+        return (caps[1].to_string(), "imdb");
+    }
+    
+    // TMDB movie URL: "themoviedb.org/movie/12345"
+    if let Some(caps) = Regex::new(r"themoviedb\.org/movie/(\d+)").ok()?.captures(input) {
+        return (caps[1].to_string(), "tmdb");
+    }
+    
+    // TMDB TV URL: "themoviedb.org/tv/12345"
+    if let Some(caps) = Regex::new(r"themoviedb\.org/tv/(\d+)").ok()?.captures(input) {
+        return (caps[1].to_string(), "tmdb");
+    }
+}
+```
+
+### IMDB ID Lookup
+
+If an IMDB ID is provided, StreamVault converts it to a TMDB ID:
+
+```rust
+// tmdb.rs:1016
+if source == "imdb" {
+    let find_url = build_tmdb_url(
+        &format!("/find/{}", tmdb_id),
+        api_key,
+        "external_source=imdb_id"
+    );
+    
+    let result: TmdbFindResult = response.json()?;
+    
+    // Try movie results first, then TV
+    let id = result.movie_results.first()
+        .or_else(|| result.tv_results.first())
+        .map(|r| r.id.to_string())?;
+}
+```
+
+## Retry Logic
+
+Robust error handling with exponential backoff:
+
+```rust
+// tmdb.rs:200
+fn tmdb_request_with_retry(
+    client: &reqwest::blocking::Client,
+    url: &str,
+    credential: &str,
+    max_retries: u32,
+) -> Result<reqwest::blocking::Response, reqwest::Error> {
+    for attempt in 0..max_retries {
+        if attempt > 0 {
+            // Exponential backoff with jitter
+            let delay = std::cmp::min(BASE_DELAY_MS * (1 << attempt), MAX_DELAY_MS);
+            let jitter = (rand_simple() * delay as f64 * 0.3) as u64;
+            let total_delay = delay + jitter;
+            std::thread::sleep(std::time::Duration::from_millis(total_delay));
+        }
+        
+        match result {
+            Ok(response) if response.status().as_u16() == 429 => {
+                // Rate limited - respect Retry-After header
+                if let Some(retry_after) = response.headers().get("retry-after") {
+                    let secs = retry_after.to_str().unwrap_or("1").parse::<u64>()?;
+                    std::thread::sleep(std::time::Duration::from_secs(secs.min(30)));
+                }
+                continue;
+            }
+            Ok(response) if response.status().is_server_error() => continue,
+            Ok(response) => return Ok(response),
+            Err(e) => { /* retry on network errors */ }
+        }
+    }
+}
+```
+
+**Retry Configuration**:
+- Base delay: 500ms
+- Max delay: 10 seconds
+- Max retries: 5 attempts
+- Jitter: ±30% random variance
+
+## Metadata Structure
+
+```rust
+// tmdb.rs:58
+pub struct TmdbMetadata {
+    pub title: String,
+    pub year: Option<i32>,
+    pub overview: Option<String>,
+    pub poster_path: Option<String>,
+    pub tmdb_id: Option<String>,
+}
+```
+
+Stored in database:
+```sql
+CREATE TABLE media (
+    id INTEGER PRIMARY KEY,
+    title TEXT NOT NULL,
+    year INTEGER,
+    overview TEXT,
+    poster_path TEXT,
+    tmdb_id TEXT,
+    -- ... other fields
+);
+```
+
+## Troubleshooting
+
+### "No metadata found"
+
+1. Check your TMDB API key in Settings
+2. Verify the file has a valid title (not just random characters)
+3. Try using Fix Match with a TMDB URL
+
+### "Images not loading"
+
+1. Check `%APPDATA%/StreamVault/image_cache/` permissions
+2. Verify internet connection for image downloads
+3. Clear image cache and re-scan library
+
+### "Wrong movie/show matched"
+
+Use the **Fix Match** feature:
+1. Right-click the media item
+2. Select "Fix Match"
+3. Enter the correct TMDB ID or URL

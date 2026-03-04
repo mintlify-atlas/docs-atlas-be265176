@@ -1,0 +1,510 @@
+---
+title: MPV Player Setup
+description: Install and configure MPV for high-quality video playback
+---
+
+## Overview
+
+StreamVault uses **MPV** as its primary video player for:
+- Native playback of all formats (MKV, MP4, AVI, HDR, etc.)
+- No transcoding required
+- Resume playback tracking via IPC
+- Subtitle and audio track selection
+- Hardware acceleration support
+
+<Note>
+MPV is a free, open-source media player known for high-quality video playback and extensive format support.
+</Note>
+
+## Supported Formats
+
+MPV supports all common video formats:
+
+| Format | Extension | Notes |
+|--------|-----------|-------|
+| Matroska | `.mkv` | Preferred for high-quality rips |
+| MPEG-4 | `.mp4`, `.m4v` | Universal compatibility |
+| AVI | `.avi` | Legacy format |
+| QuickTime | `.mov` | macOS native |
+| WebM | `.webm` | Web-optimized |
+| Windows Media | `.wmv` | Windows native |
+| Flash Video | `.flv` | Legacy streaming |
+| MPEG-TS | `.ts`, `.m2ts` | Broadcast/Blu-ray |
+
+From `database.rs:773-782`:
+
+```rust
+AND (file_path LIKE '%.mkv'
+     OR file_path LIKE '%.mp4'
+     OR file_path LIKE '%.avi'
+     OR file_path LIKE '%.mov'
+     OR file_path LIKE '%.webm'
+     OR file_path LIKE '%.m4v'
+     OR file_path LIKE '%.wmv'
+     OR file_path LIKE '%.flv'
+     OR file_path LIKE '%.ts'
+     OR file_path LIKE '%.m2ts')
+```
+
+## Installation by Platform
+
+<Tabs>
+  <Tab title="Windows">
+    ### Option 1: Official Installer
+    
+    <Steps>
+      <Step title="Download MPV">
+        Go to [mpv.io/installation](https://mpv.io/installation/) or use the [SourceForge builds](https://sourceforge.net/projects/mpv-player-windows/files/)
+      </Step>
+      
+      <Step title="Run Installer">
+        - Download the latest 64-bit installer
+        - Run the `.exe` file
+        - Follow the installation wizard
+        - Choose installation directory (default: `C:\Program Files\mpv\`)
+      </Step>
+      
+      <Step title="Add to PATH (Optional)">
+        To make MPV accessible from any terminal:
+        
+        1. Press `Win + X` → **System** → **Advanced system settings**
+        2. Click **Environment Variables**
+        3. Under **System variables**, select **Path** → **Edit**
+        4. Click **New** and add: `C:\Program Files\mpv\`
+        5. Click **OK** on all dialogs
+      </Step>
+    </Steps>
+    
+    ### Option 2: Package Managers
+    
+    #### Scoop
+    ```powershell
+    scoop install mpv
+    ```
+    
+    #### Chocolatey
+    ```powershell
+    choco install mpv
+    ```
+    
+    <Note>
+    StreamVault automatically searches Scoop and Chocolatey installation paths.
+    </Note>
+  </Tab>
+  
+  <Tab title="macOS">
+    ### Using Homebrew
+    
+    ```bash
+    brew install mpv
+    ```
+    
+    ### Manual Installation
+    
+    <Steps>
+      <Step title="Download MPV">
+        Visit [mpv.io](https://mpv.io/installation/)
+      </Step>
+      
+      <Step title="Install .app Bundle">
+        - Download the macOS `.dmg` file
+        - Drag `mpv.app` to `/Applications/`
+      </Step>
+      
+      <Step title="Create Symlink (Optional)">
+        To use MPV from terminal:
+        
+        ```bash
+        sudo ln -s /Applications/mpv.app/Contents/MacOS/mpv /usr/local/bin/mpv
+        ```
+      </Step>
+    </Steps>
+  </Tab>
+  
+  <Tab title="Linux">
+    ### Debian/Ubuntu
+    
+    ```bash
+    sudo apt update
+    sudo apt install mpv
+    ```
+    
+    ### Fedora
+    
+    ```bash
+    sudo dnf install mpv
+    ```
+    
+    ### Arch Linux
+    
+    ```bash
+    sudo pacman -S mpv
+    ```
+    
+    ### Flatpak (Universal)
+    
+    ```bash
+    flatpak install flathub io.mpv.Mpv
+    ```
+  </Tab>
+</Tabs>
+
+## Auto-Detection in StreamVault
+
+StreamVault automatically searches for MPV on Windows in these locations (from `config.rs:10-29`):
+
+```rust
+const MPV_SEARCH_PATHS: &[&str] = &[
+    // Common installation directories
+    "C:\\Program Files\\mpv\\mpv.exe",
+    "C:\\Program Files (x86)\\mpv\\mpv.exe",
+    "C:\\Program Files\\mpv.net\\mpv.exe",
+    "C:\\Program Files (x86)\\mpv.net\\mpv.exe",
+    // Scoop installations
+    "C:\\Users\\*\\scoop\\apps\\mpv\\current\\mpv.exe",
+    "C:\\Users\\*\\scoop\\shims\\mpv.exe",
+    // Chocolatey
+    "C:\\ProgramData\\chocolatey\\bin\\mpv.exe",
+    // Portable installations
+    "C:\\mpv\\mpv.exe",
+    "C:\\Tools\\mpv\\mpv.exe",
+    "D:\\mpv\\mpv.exe",
+    "D:\\Tools\\mpv\\mpv.exe",
+    // User profile locations
+    "C:\\Users\\*\\AppData\\Local\\Programs\\mpv\\mpv.exe",
+    "C:\\Users\\*\\mpv\\mpv.exe",
+];
+```
+
+### Detection Process
+
+From `config.rs:33-80`:
+
+```rust
+pub fn find_mpv_executable() -> Option<String> {
+    println!("[MPV] Searching for mpv.exe on the system...");
+
+    // First, check if mpv is in PATH (fastest check)
+    if let Ok(output) = Command::new("where").arg("mpv.exe").output() {
+        if output.status.success() {
+            if let Ok(path) = String::from_utf8(output.stdout) {
+                let path = path.lines().next().unwrap_or("").trim();
+                if !path.is_empty() && Path::new(path).exists() {
+                    println!("[MPV] Found mpv in PATH: {}", path);
+                    return Some(path.to_string());
+                }
+            }
+        }
+    }
+
+    // Check common installation paths
+    for pattern in MPV_SEARCH_PATHS {
+        if pattern.contains('*') {
+            // Handle wildcard patterns (for user-specific paths)
+            if let Some(found) = expand_and_check_pattern(pattern) {
+                println!("[MPV] Found mpv at: {}", found);
+                return Some(found);
+            }
+        } else if Path::new(pattern).exists() {
+            println!("[MPV] Found mpv at: {}", pattern);
+            return Some(pattern.to_string());
+        }
+    }
+
+    println!("[MPV] mpv.exe not found on the system");
+    None
+}
+```
+
+## Configuring MPV Path in Settings
+
+<Steps>
+  <Step title="Open Settings">
+    Click the **Settings** gear icon → **General** section
+  </Step>
+  
+  <Step title="Auto-Detect (Recommended)">
+    Click the **Detect** button next to the MPV Path field. StreamVault will:
+    
+    - Search all common installation locations
+    - Check system PATH
+    - Display the found path if detected
+    
+    From `SettingsModal.tsx:327-354`:
+    
+    ```tsx
+    const handleAutoDetectMpv = async () => {
+      setDetectingMpv(true)
+      try {
+        const foundPath = await autoDetectMpv()
+        if (foundPath) {
+          setConfig({ ...config, mpv_path: foundPath })
+          toast({
+            title: "MPV Found",
+            description: `Detected at: ${foundPath}`
+          })
+        } else {
+          toast({
+            title: "MPV Not Found",
+            description: "Could not find mpv.exe. Please install MPV or set path manually.",
+            variant: "destructive"
+          })
+        }
+      } finally {
+        setDetectingMpv(false)
+      }
+    }
+    ```
+  </Step>
+  
+  <Step title="Manual Entry (Alternative)">
+    If auto-detection fails:
+    
+    1. Click the **Browse** folder icon
+    2. Navigate to your MPV installation
+    3. Select `mpv.exe` (Windows) or `mpv` binary (Linux/macOS)
+    4. Click **Open**
+  </Step>
+  
+  <Step title="Save Configuration">
+    Click **Save** to persist the MPV path to `media_config.json`
+  </Step>
+</Steps>
+
+## IPC Configuration
+
+StreamVault communicates with MPV using a **Lua script** for progress tracking.
+
+### Progress Tracking Script
+
+From `mpv_ipc.rs:32-130`:
+
+```lua
+-- StreamVault Progress Tracker for MPV
+-- Saves playback position to a JSON file periodically and on quit
+
+local progress_file = "%APPDATA%/StreamVault/mpv_progress/{media_id}.json"
+local save_interval = 2 -- seconds
+
+local function get_progress_data()
+    local pos = mp.get_property_number("time-pos")
+    local duration = mp.get_property_number("duration")
+    local paused = mp.get_property_bool("pause") or false
+    local eof = mp.get_property_bool("eof-reached") or false
+    
+    return string.format(
+        '{"position":%.3f,"duration":%.3f,"paused":%s,"eof_reached":%s}',
+        pos, duration,
+        paused and "true" or "false",
+        eof and "true" or "false"
+    )
+end
+
+local function save_progress()
+    local data = get_progress_data()
+    local file = io.open(progress_file, "w")
+    if file then
+        file:write(data)
+        file:close()
+    end
+end
+
+-- Periodic save timer (every 2 seconds)
+local timer = mp.add_periodic_timer(save_interval, save_progress)
+
+-- Save on pause/unpause
+mp.observe_property("pause", "bool", save_progress)
+
+-- Save on seek
+mp.register_event("seek", save_progress)
+
+-- Save on quit - most important!
+mp.register_event("shutdown", save_progress)
+
+-- Save when file ends
+mp.register_event("end-file", save_progress)
+```
+
+### How Resume Works
+
+<Steps>
+  <Step title="Playback Starts">
+    StreamVault launches MPV with the Lua script:
+    
+    ```bash
+    mpv --script=tracker_{media_id}.lua --start={resume_position} video.mp4
+    ```
+  </Step>
+  
+  <Step title="Progress Saved">
+    Every 2 seconds, the script writes:
+    
+    ```json
+    {
+      "position": 1234.567,
+      "duration": 7200.0,
+      "paused": false,
+      "eof_reached": false,
+      "quit_time": 1678901234
+    }
+    ```
+  </Step>
+  
+  <Step title="On Exit">
+    When you close MPV, the `shutdown` event triggers a final save
+  </Step>
+  
+  <Step title="Resume Next Time">
+    StreamVault reads the saved position and resumes from that point
+  </Step>
+</Steps>
+
+<Note>
+Progress is cleared automatically when you watch **95% or more** of the video.
+</Note>
+
+## Cloud Streaming with Disk Cache
+
+For Google Drive streaming, MPV can use disk caching to improve playback.
+
+From `mpv_ipc.rs:181-188`:
+
+```rust
+pub struct CloudCacheSettings {
+    pub enabled: bool,
+    pub cache_dir: String,
+    pub max_size_mb: u32,
+}
+```
+
+### Cache Configuration
+
+In Settings → Cloud Storage:
+
+- **Enable Cloud Cache**: Toggles disk caching
+- **Cache Directory**: Custom cache location (default: `%APPDATA%/StreamVault/cloud_cache/`)
+- **Max Cache Size**: Per-movie cache limit (default: 1024 MB = 1 GB)
+- **Cache Expiry**: Auto-cleanup after 24 hours
+
+From `config.rs:186-192`:
+
+```rust
+#[serde(default)]
+pub cloud_cache_enabled: bool,
+#[serde(default)]
+pub cloud_cache_dir: Option<String>,
+#[serde(default = "default_cloud_cache_max_mb")]
+pub cloud_cache_max_mb: u32,
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="MPV Not Found">
+    - Run auto-detection in Settings → General
+    - Verify MPV is installed: Open terminal and run `mpv --version`
+    - Manually browse to `mpv.exe` location
+    - Add MPV to system PATH (see installation steps above)
+  </Accordion>
+  
+  <Accordion title="Playback Doesn't Start">
+    - Check MPV path is correct in settings
+    - Verify file exists and isn't corrupted
+    - Test MPV manually: `mpv "path\to\video.mp4"`
+    - Check Developer Console for error messages
+  </Accordion>
+  
+  <Accordion title="Resume Not Working">
+    - Ensure Lua script is loading (check MPV console: `` ` `` key)
+    - Verify progress directory exists: `%APPDATA%/StreamVault/mpv_progress/`
+    - Check file permissions (script needs write access)
+    - Clear old progress: Settings → Advanced → Clean Up Missing Titles
+  </Accordion>
+  
+  <Accordion title="Subtitles Not Loading">
+    MPV auto-loads subtitles in the same directory as the video. To manually load:
+    
+    - Press `v` during playback to cycle subtitle tracks
+    - Drag and drop `.srt` file onto MPV window
+    - Use MPV config file (`%APPDATA%/mpv/mpv.conf`) to set default subtitle preferences
+  </Accordion>
+  
+  <Accordion title="Hardware Acceleration Issues">
+    Edit `%APPDATA%/mpv/mpv.conf` to configure GPU acceleration:
+    
+    ```ini
+    # Use hardware decoding
+    hwdec=auto-safe
+    
+    # Force specific GPU API (if auto fails)
+    # hwdec=d3d11va  # Windows (Direct3D)
+    # hwdec=videotoolbox  # macOS
+    # hwdec=vaapi  # Linux
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Advanced MPV Configuration
+
+### Custom Config File
+
+Create `%APPDATA%/mpv/mpv.conf` (Windows) or `~/.config/mpv/mpv.conf` (Linux/macOS):
+
+```ini
+# Video
+hwdec=auto-safe              # Hardware decoding
+vo=gpu                         # GPU video output
+profile=gpu-hq                 # High quality GPU rendering
+
+# Audio
+audio-file-auto=fuzzy          # Auto-load audio files
+volume=100                     # Default volume
+
+# Subtitles
+sub-auto=fuzzy                 # Auto-load subtitle files
+sub-font-size=45               # Subtitle size
+sub-color="#FFFFFF"            # White text
+sub-border-size=2              # Black border
+
+# Performance
+cache=yes                      # Enable cache
+demuxer-max-bytes=500M         # Max cache size
+demuxer-max-back-bytes=100M    # Backward cache
+
+# UI
+osc=yes                        # On-screen controller
+osd-bar=yes                    # Progress bar
+```
+
+### Key Bindings
+
+Default MPV shortcuts:
+
+| Key | Action |
+|-----|--------|
+| `Space` | Play/Pause |
+| `→` / `←` | Seek forward/backward 5s |
+| `↑` / `↓` | Volume up/down |
+| `f` | Toggle fullscreen |
+| `v` | Cycle subtitle tracks |
+| `#` | Cycle audio tracks |
+| `s` | Screenshot |
+| `` ` `` | Show console (debug) |
+| `q` | Quit |
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="TMDB Setup" icon="key" href="/configuration/tmdb-setup">
+    Configure metadata API
+  </Card>
+  <Card title="Google Drive Setup" icon="cloud" href="/configuration/google-drive-setup">
+    Connect cloud storage
+  </Card>
+  <Card title="Cloud Streaming" icon="play" href="/features/cloud-streaming">
+    Stream from Google Drive
+  </Card>
+  <Card title="Playback Features" icon="film" href="/features/playback-resume">
+    Resume and progress tracking
+  </Card>
+</CardGroup>

@@ -1,0 +1,278 @@
+---
+title: TMDB API Configuration
+description: Set up The Movie Database API for metadata, posters, and streaming search
+---
+
+## Overview
+
+StreamVault uses The Movie Database (TMDB) API to fetch:
+- Movie and TV show metadata (titles, overviews, ratings)
+- High-quality posters and backdrops
+- Episode thumbnails and descriptions
+- Streaming search results
+
+<Note>
+You can use either the **built-in shared API key** (free, subject to rate limits) or **your own API key** (recommended for unlimited requests).
+</Note>
+
+## API Key vs Access Token
+
+TMDB provides two authentication methods:
+
+| Method | Use Case | Format |
+|--------|----------|--------|
+| **API Key (v3)** | Basic authentication | `a1b2c3d4e5f6...` (32 chars) |
+| **Access Token (v4)** | Bearer token authentication | `eyJhbGc...` (JWT format) |
+
+<Warning>
+StreamVault accepts **both formats**. The app automatically detects which type you're using and applies the correct authentication header.
+</Warning>
+
+## Getting Your TMDB API Key
+
+<Steps>
+  <Step title="Create a TMDB Account">
+    Go to [themoviedb.org](https://www.themoviedb.org/) and sign up for a free account
+  </Step>
+  
+  <Step title="Navigate to API Settings">
+    After logging in, go to:
+    
+    **Settings** → **API** → [https://www.themoviedb.org/settings/api](https://www.themoviedb.org/settings/api)
+  </Step>
+  
+  <Step title="Request API Access">
+    Click **Request an API Key** and fill out the form:
+    
+    - **Type of Use**: Personal / Educational
+    - **Application Name**: StreamVault (or your preferred name)
+    - **Application URL**: You can use `http://localhost` for personal use
+    - **Application Summary**: Briefly describe you're using it for a personal media library
+  </Step>
+  
+  <Step title="Accept Terms">
+    Read and accept the TMDB API Terms of Use
+  </Step>
+  
+  <Step title="Copy Your Credentials">
+    You'll receive **two** credentials:
+    
+    - **API Key (v3 auth)**: 32-character hex string
+    - **API Read Access Token (v4 auth)**: JWT bearer token
+    
+    <Note>
+    Either one works! The Access Token is newer and recommended.
+    </Note>
+  </Step>
+</Steps>
+
+## Entering API Key in StreamVault
+
+<Steps>
+  <Step title="Open Settings">
+    Click the **Settings** gear icon in the top-right corner
+  </Step>
+  
+  <Step title="Navigate to API Keys Section">
+    Select **API Keys** from the sidebar
+  </Step>
+  
+  <Step title="Choose API Key Mode">
+    You'll see two options:
+    
+    ### Use Built-in API Key (Default)
+    - No setup required
+    - Shared across all users
+    - May hit rate limits during peak usage (40 requests per 10 seconds)
+    
+    ### Use Your Own API Key (Recommended)
+    - Unlimited requests
+    - No rate limits
+    - Free for personal use
+  </Step>
+  
+  <Step title="Enter Your Key">
+    If using your own key:
+    
+    1. Select **"Use Your Own API Key"**
+    2. Paste your API Key or Access Token into the input field
+    3. Click **Save**
+  </Step>
+</Steps>
+
+## Settings UI Implementation
+
+From `SettingsModal.tsx:862-969`:
+
+```tsx
+{/* TMDB API Key Mode Selection */}
+<div className="p-4 rounded-xl bg-card border border-border space-y-4">
+  <div className="flex items-center gap-3">
+    <Label>TMDB API Key</Label>
+    <p>Used for metadata, posters, and streaming search</p>
+  </div>
+
+  {/* Option: Use Built-in */}
+  <button onClick={() => setUseOwnApiKey(false)}>
+    <span>Use Built-in API Key</span>
+    <span className="badge">FREE</span>
+    <p>No setup needed. Shared, may hit rate limits.</p>
+  </button>
+
+  {/* Option: Use Your Own */}
+  <button onClick={() => setUseOwnApiKey(true)}>
+    <span>Use Your Own API Key</span>
+    <span className="badge">RECOMMENDED</span>
+    <p>Free key for unlimited requests.</p>
+  </button>
+
+  {/* Custom API Key Input */}
+  {useOwnApiKey && (
+    <Input
+      type="password"
+      value={config.tmdb_api_key}
+      placeholder="Enter your TMDB API key or Access Token"
+    />
+  )}
+</div>
+```
+
+## Default Token Fallback
+
+When no custom API key is configured, StreamVault uses a built-in token via the backend proxy (from `.env.example:104-106`):
+
+```bash
+# Optional TMDB proxy override:
+STREAMVAULT_TMDB_PROXY_URL=http://localhost:3001/api/tmdb
+# If unset, uses localhost in debug and production backend URL in release
+```
+
+<Note>
+The built-in token is routed through the backend server to protect the shared API key from client-side exposure.
+</Note>
+
+## Testing Metadata Fetch
+
+After configuring your API key:
+
+<Steps>
+  <Step title="Trigger Library Scan">
+    Click **Update Library** in the sidebar to scan your Google Drive
+  </Step>
+  
+  <Step title="Monitor Metadata Fetching">
+    You should see:
+    - Movie/TV show titles populating
+    - Posters downloading to `%APPDATA%/StreamVault/image_cache/`
+    - Episode metadata appearing in the UI
+  </Step>
+  
+  <Step title="Check for Errors">
+    If metadata fails to load:
+    - Open Developer Console (`Ctrl+Shift+I` in dev mode)
+    - Look for TMDB API errors
+    - Verify your API key is correct
+    - Check TMDB API status at [status.themoviedb.org](https://status.themoviedb.org/)
+  </Step>
+</Steps>
+
+## Rate Limits
+
+### Built-in Shared Key
+- **40 requests per 10 seconds** (shared across all users)
+- May cause delays during large library scans
+
+### Personal API Key
+- **40 requests per 10 seconds** (per account)
+- Sufficient for most personal libraries
+- No concurrent user sharing
+
+<Warning>
+If you exceed rate limits, TMDB returns `429 Too Many Requests`. StreamVault automatically retries with exponential backoff.
+</Warning>
+
+## Configuration Storage
+
+Your API key is stored in `media_config.json` (from `config.rs:183`):
+
+```json
+{
+  "tmdb_api_key": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+}
+```
+
+<Warning>
+**Security**: The config file is stored in plain text. Keep your `%APPDATA%/StreamVault/` directory private and never commit it to version control.
+</Warning>
+
+## Auto-Detection Logic
+
+From `SettingsModal.tsx:226-228`:
+
+```tsx
+// If user already has a custom API key saved, show the custom input
+setUseOwnApiKey(!!data.tmdb_api_key)
+```
+
+The UI automatically switches to "Use Your Own API Key" mode when a custom key is detected in the config.
+
+## API Usage in Code
+
+StreamVault's TMDB client (`tmdb.rs`) handles both authentication methods:
+
+```rust
+// Supports both v3 API keys and v4 Bearer tokens
+if api_key.starts_with("eyJ") {
+    // v4 Bearer token
+    request = request.header("Authorization", format!("Bearer {}", api_key));
+} else {
+    // v3 API key
+    request = request.query(&[("api_key", api_key)]);
+}
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Posters Not Loading">
+    - Verify your API key is entered correctly
+    - Check TMDB API status
+    - Ensure you have internet connectivity
+    - Look for errors in `%APPDATA%/StreamVault/logs/`
+  </Accordion>
+  
+  <Accordion title="Rate Limit Errors">
+    - Switch to using your own API key (unlimited personal use)
+    - Reduce concurrent library scans
+    - Wait 10 seconds before retrying
+  </Accordion>
+  
+  <Accordion title="Invalid API Key">
+    - Ensure you copied the full key (no truncation)
+    - Try using the Access Token instead of API Key
+    - Regenerate your API key from TMDB settings
+  </Accordion>
+  
+  <Accordion title="Metadata Not Updating">
+    - Use **Fix Match** to manually correct misidentified titles
+    - Clear image cache: Settings → Advanced → Clean Up Missing Titles
+    - Force refresh by removing and re-adding media
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Google Drive Setup" icon="cloud" href="/configuration/google-drive-setup">
+    Connect cloud storage for streaming
+  </Card>
+  <Card title="Player Setup" icon="play" href="/configuration/player-setup">
+    Install MPV for video playback
+  </Card>
+  <Card title="Library Management" icon="folders" href="/features/library-management">
+    Start organizing your media
+  </Card>
+  <Card title="Metadata Fetching" icon="database" href="/features/metadata-fetching">
+    Learn about automatic metadata
+  </Card>
+</CardGroup>

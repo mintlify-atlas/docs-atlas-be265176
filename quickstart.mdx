@@ -1,80 +1,387 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quick start guide
+description: Get from installation to your first media library in minutes
 ---
 
-## Get started in three steps
+## Overview
 
-Get your documentation site running locally and make your first customization.
-
-### Step 1: Set up your local environment
-
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 2: Deploy your changes
-
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
-
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
-
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 3: Go live
-
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
-
-## Next steps
-
-Now that you have your docs running, explore these key features:
-
-<CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
-</CardGroup>
+This guide walks you through setting up StreamVault for the first time, connecting Google Drive, configuring TMDB metadata, and scanning your first media library.
 
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+  **Before you begin**: Make sure you've completed the [installation steps](/installation) and have StreamVault running on your system.
+</Note>
+
+## First launch
+
+<Steps>
+  <Step title="Launch StreamVault">
+    Start the application from your applications menu or by running:
+    
+    <CodeGroup>
+    ```bash Development mode
+    npm run tauri dev
+    ```
+    
+    ```bash Production build
+    # Windows
+    .\src-tauri\target\release\streamvault.exe
+    
+    # macOS
+    ./src-tauri/target/release/streamvault
+    
+    # Linux
+    ./src-tauri/target/release/streamvault
+    ```
+    </CodeGroup>
+    
+    The application window will open with a **1400×900** fixed-size interface featuring StreamVault's signature monochrome design.
+  </Step>
+  
+  <Step title="Complete onboarding (first launch only)">
+    If this is your first time launching StreamVault, you'll see the onboarding wizard. This will guide you through:
+    
+    - Connecting your Google Drive account
+    - Entering your TMDB API key (optional but recommended)
+    - Configuring MPV player path (if not auto-detected)
+    
+    <Tip>
+      You can skip the onboarding and configure everything later in **Settings**, but we recommend completing it now for the best experience.
+    </Tip>
+  </Step>
+  
+  <Step title="Verify MPV detection">
+    StreamVault will automatically search for MPV in common installation locations. If found, you'll see a confirmation message.
+    
+    If MPV is not detected:
+    1. Open **Settings** from the sidebar
+    2. Navigate to **Player** settings
+    3. Click **Browse** and locate your `mpv.exe` file
+    4. Save the configuration
+    
+    <Warning>
+      Without a valid MPV path, you won't be able to play any media. See [player setup](/configuration/player-setup) for detailed configuration.
+    </Warning>
+  </Step>
+</Steps>
+
+## Connect Google Drive
+
+<Steps>
+  <Step title="Open Google Drive settings">
+    1. Click **Settings** in the left sidebar
+    2. Navigate to the **Google Drive** section
+    3. Click **Connect Google Drive** button
+    
+    This will open your default browser for OAuth authentication.
+  </Step>
+  
+  <Step title="Authorize StreamVault">
+    In the browser window:
+    
+    1. Sign in to your Google account (if not already signed in)
+    2. Review the permissions StreamVault is requesting:
+       - **Read-only access** to your Google Drive files
+       - **File metadata** for indexing video files
+    3. Click **Allow** to grant access
+    4. You'll be redirected back with a success message
+    
+    <Note>
+      StreamVault uses OAuth2 for secure authentication. Your credentials are never stored locally - only refresh tokens are saved in `%APPDATA%/StreamVault/media_config.json`.
+    </Note>
+  </Step>
+  
+  <Step title="Verify connection">
+    Return to StreamVault. You should see:
+    - **Connected** status with your Google account email
+    - **Disconnect Google Drive** button (to revoke access if needed)
+    - **Update Library** button enabled in the sidebar
+    
+    <Tip>
+      Background sync will now monitor your Google Drive for changes every 5 seconds, even when the app is minimized to the system tray.
+    </Tip>
+  </Step>
+</Steps>
+
+## Set up TMDB metadata
+
+<Steps>
+  <Step title="Get a TMDB API key">
+    1. Create a free account at [themoviedb.org](https://www.themoviedb.org/signup)
+    2. Verify your email address
+    3. Navigate to **Settings** → **API**
+    4. Request an API key (choose "Developer" for personal use)
+    5. Fill out the application form:
+       - **Type of use**: Personal
+       - **Application name**: StreamVault Personal Library
+       - **Application URL**: Can be left blank or use GitHub repo URL
+    6. Accept the terms of service
+    7. Copy your **API Read Access Token** (v4 auth token, starts with `eyJ...`)
+    
+    <Note>
+      StreamVault supports both v3 API keys and v4 access tokens. The access token is recommended as it has higher rate limits.
+    </Note>
+  </Step>
+  
+  <Step title="Add API key to StreamVault">
+    1. Open **Settings** in StreamVault
+    2. Navigate to **TMDB** section
+    3. Paste your API key or access token into the **TMDB API Key** field
+    4. Click **Save**
+    
+    The key is encrypted and stored locally in `%APPDATA%/StreamVault/media_config.json`.
+  </Step>
+  
+  <Step title="Verify TMDB connection (optional)">
+    StreamVault will automatically validate your API key when you first scan media. If the key is invalid, you'll see error messages in the scan progress.
+    
+    <Tip>
+      Without a TMDB API key, StreamVault will still index your media files, but posters, backdrops, and metadata will be unavailable.
+    </Tip>
+  </Step>
+</Steps>
+
+## Scan your first library
+
+<Steps>
+  <Step title="Start library scan">
+    Click the **Update Library** button in the left sidebar. This initiates a full Google Drive scan.
+    
+    StreamVault will:
+    - Fetch your entire Google Drive file list
+    - Filter for supported video formats (`.mkv`, `.mp4`, `.avi`, etc.)
+    - Parse filenames to extract titles, years, and episode numbers
+    - Query TMDB for metadata and images
+    - Store everything in the local SQLite database
+    
+    <Note>
+      The first scan can take several minutes depending on the size of your Google Drive. Subsequent scans use incremental updates and are much faster.
+    </Note>
+  </Step>
+  
+  <Step title="Monitor scan progress">
+    A progress dialog will appear showing:
+    - **Current file** being processed
+    - **Files processed** vs total files found
+    - **Percentage complete**
+    - **Estimated time remaining**
+    
+    You can minimize StreamVault during scanning - it will continue in the background and show a notification when complete.
+    
+    <CodeGroup>
+    ```plaintext Scan events
+    scan-progress    # Real-time progress updates
+    scan-complete    # Fires when scan finishes
+    library-updated  # Database has been updated
+    notification     # Windows toast notification
+    ```
+    </CodeGroup>
+  </Step>
+  
+  <Step title="Review indexed media">
+    Once the scan completes:
+    
+    1. Click **Movies** in the sidebar to view indexed movies
+    2. Click **TV Shows** to browse series and episodes
+    3. Each item shows:
+       - **Poster** or backdrop image from TMDB
+       - **Title** and year
+       - **Rating** from TMDB
+       - **Overview** on hover or click
+    
+    <Tip>
+      Right-click any media item to access context menu options like **Play**, **Fix Match**, **Mark as Watched**, or **View Details**.
+    </Tip>
+  </Step>
+</Steps>
+
+## Play your first video
+
+<Steps>
+  <Step title="Select media to play">
+    Browse your library and click on any movie or episode card. A details view will appear showing:
+    - Full metadata (title, year, overview, cast, rating)
+    - Backdrop image
+    - **Play** button (or **Resume** if you've watched part of it)
+    - Episode list (for TV shows)
+  </Step>
+  
+  <Step title="Start playback">
+    Click the **Play** or **Resume** button. StreamVault will:
+    
+    1. Generate a temporary Google Drive download URL
+    2. Launch MPV player with the video stream
+    3. Restore your previous playback position (if resuming)
+    4. Begin tracking progress via MPV IPC
+    
+    <CodeGroup>
+    ```plaintext MPV integration
+    Progress tracking    # Auto-saves every few seconds
+    Resume position      # Stored in SQLite database
+    Playback events      # mpv-playback-ended event
+    Watch history        # Records completion status
+    ```
+    </CodeGroup>
+  </Step>
+  
+  <Step title="Control playback">
+    Use MPV's built-in controls:
+    
+    - **Space**: Pause/play
+    - **Left/Right arrows**: Seek backward/forward 5 seconds
+    - **Up/Down arrows**: Volume control
+    - **F**: Toggle fullscreen
+    - **S**: Take screenshot
+    - **Q**: Quit player
+    
+    Your progress is automatically saved. When you quit MPV, StreamVault records your position and watch status.
+    
+    <Tip>
+      See [keyboard shortcuts](/guides/keyboard-shortcuts) for a complete list of MPV hotkeys.
+    </Tip>
+  </Step>
+</Steps>
+
+## Enable background sync
+
+StreamVault continuously monitors your Google Drive for new files:
+
+<Steps>
+  <Step title="Verify background sync is enabled">
+    1. Open **Settings**
+    2. Navigate to **Google Drive** section
+    3. Ensure **Background Sync** is enabled
+    4. Set **Scan Interval** (default: 5 minutes)
+    
+    <Note>
+      Background sync uses Google Drive's Changes API to detect new files without re-scanning your entire Drive. This is very efficient and uses minimal API quota.
+    </Note>
+  </Step>
+  
+  <Step title="Minimize to system tray">
+    Click the minimize button or close the window. StreamVault will:
+    - Minimize to the system tray (Windows notification area)
+    - Continue background sync polling every 5 seconds
+    - Show a toast notification when new media is detected
+    - Automatically index new files without user intervention
+    
+    <Tip>
+      Right-click the system tray icon to access quick actions like **Show Window**, **Update Library**, or **Quit**.
+    </Tip>
+  </Step>
+</Steps>
+
+## What's next?
+
+<CardGroup cols={2}>
+  <Card
+    title="Explore core features"
+    icon="compass"
+    href="/features/google-drive"
+  >
+    Learn about real-time change detection, incremental updates, and cloud caching
+  </Card>
+  <Card
+    title="Configure settings"
+    icon="sliders"
+    href="/configuration/settings"
+  >
+    Customize player paths, cache limits, scan intervals, and more
+  </Card>
+  <Card
+    title="Fix mismatched media"
+    icon="wrench"
+    href="/features/metadata"
+  >
+    Manually correct TMDB matches using the Fix Match feature
+  </Card>
+  <Card
+    title="Browse TV episodes"
+    icon="tv"
+    href="/features/library-management"
+  >
+    Navigate seasons and episodes with full metadata and thumbnails
+  </Card>
+  <Card
+    title="Social features"
+    icon="users"
+    href="/social/watch-together"
+  >
+    Watch media together with friends using synchronized playback
+  </Card>
+  <Card
+    title="Self-host backend"
+    icon="server"
+    href="/guides/self-hosting"
+  >
+    Deploy your own StreamVault backend for complete control
+  </Card>
+</CardGroup>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Google Drive connection failed" icon="triangle-exclamation">
+    **Problem**: OAuth flow fails or connection times out
+    
+    **Solutions**:
+    - Ensure you're using a supported browser (Chrome, Firefox, Edge)
+    - Check your internet connection
+    - Verify the backend server is accessible
+    - Try disconnecting and reconnecting in Settings
+    - Clear browser cookies for Google accounts and retry
+    
+    **Check backend status**:
+    ```bash
+    curl https://streamvault-backend-server.onrender.com/health
+    ```
+  </Accordion>
+  
+  <Accordion title="TMDB metadata not loading" icon="triangle-exclamation">
+    **Problem**: Media is indexed but has no posters or metadata
+    
+    **Solutions**:
+    - Verify your TMDB API key is valid (check Settings → TMDB)
+    - Ensure your API key has not exceeded rate limits
+    - Try manually fixing the match using **Fix Match** in the context menu
+    - Check console logs for specific TMDB API errors
+    
+    **Rate limits**:
+    - Free tier: 40 requests per 10 seconds
+    - Access token (v4): Higher limits, recommended
+  </Accordion>
+  
+  <Accordion title="MPV playback fails" icon="triangle-exclamation">
+    **Problem**: Video doesn't start or MPV crashes
+    
+    **Solutions**:
+    - Verify MPV is installed and in your PATH
+    - Check MPV path in Settings → Player
+    - Try playing the file directly with MPV to rule out format issues
+    - Update MPV to the latest version
+    - Check if the Google Drive file is accessible (not deleted or moved)
+    
+    **Test MPV manually**:
+    ```bash
+    mpv --version
+    mpv "https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/360/Big_Buck_Bunny_360_10s_1MB.mp4"
+    ```
+  </Accordion>
+  
+  <Accordion title="Library scan is slow" icon="triangle-exclamation">
+    **Problem**: First scan takes a very long time
+    
+    **This is normal for first scans**:
+    - Google Drive API has rate limits
+    - TMDB lookups are done sequentially to avoid rate limiting
+    - Large libraries (1000+ files) can take 30+ minutes
+    
+    **Speed up future scans**:
+    - Enable incremental updates (default behavior)
+    - Use background sync instead of manual "Update Library"
+    - Ensure TMDB API key is configured (falls back to slower proxy without it)
+  </Accordion>
+</AccordionGroup>
+
+<Note>
+  For more issues, see the [troubleshooting guide](/guides/troubleshooting) or report bugs on [GitHub Issues](https://github.com/SlasshyOverhere/StreamVault/issues).
 </Note>

@@ -1,0 +1,548 @@
+---
+title: 'Watch Together Commands'
+description: 'Synchronized playback with friends via WebSocket relay server'
+icon: 'users'
+---
+
+## Overview
+
+Watch Together enables synchronized video playback across multiple users. It uses a WebSocket relay server to coordinate play/pause/seek events and maintain a shared playback state.
+
+<Info>
+  **Architecture**: 
+  - WebSocket relay server handles rooms and sync messages
+  - MPV instances connect via IPC for precise position control
+  - Server broadcasts authoritative position updates every ~1 second
+  - Latency compensation keeps everyone in sync (±200ms tolerance)
+</Info>
+
+## Room Management
+
+### create_watch_together_room
+
+Create a new Watch Together room as host.
+
+<CodeGroup>
+```rust Rust Signature
+#[tauri::command]
+async fn wt_create_room(
+    state: State<'_, AppState>,
+    window: Window,
+    media_id: i64,
+    title: String,
+    media_match_key: Option<String>,
+    nickname: String,
+) -> Result<watch_together::RoomInfo, String>
+```
+
+```typescript TypeScript
+import { invoke } from '@tauri-apps/api/tauri';
+
+const room = await invoke<WatchRoom>('wt_create_room', {
+  mediaId: 123,
+  title: 'The Matrix',
+  mediaMatchKey: 'tmdb:603',  // Optional: for matching media across users
+  nickname: 'Alice'
+});
+
+console.log(`Room code: ${room.code}`);
+```
+</CodeGroup>
+
+<ParamField path="media_id" type="number" required>
+  Local media item ID
+</ParamField>
+
+<ParamField path="title" type="string" required>
+  Media title (for display)
+</ParamField>
+
+<ParamField path="media_match_key" type="string | null">
+  Cross-platform media identifier (e.g., `"tmdb:603"` or `"imdb:tt0133093"`)
+</ParamField>
+
+<ParamField path="nickname" type="string" required>
+  Your display name in the room
+</ParamField>
+
+<ResponseField name="RoomInfo" type="object">
+  <Expandable title="Response fields">
+    <ResponseField name="code" type="string">
+      6-character room code (e.g., `"ABC123"`)
+    </ResponseField>
+    <ResponseField name="host_id" type="string">
+      UUID of the room host
+    </ResponseField>
+    <ResponseField name="media_title" type="string">
+      Media being watched
+    </ResponseField>
+    <ResponseField name="media_id" type="number">
+      Your local media ID
+    </ResponseField>
+    <ResponseField name="participants" type="array">
+      Array of participants (see Participant type below)
+    </ResponseField>
+    <ResponseField name="is_playing" type="boolean">
+      Whether playback has started
+    </ResponseField>
+    <ResponseField name="current_position" type="number">
+      Current playback position in seconds
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<Note>
+  As the host, only you can start playback (`wt_start_playback`) once all participants are ready.
+</Note>
+
+---
+
+### join_watch_together_room
+
+Join an existing Watch Together room.
+
+<CodeGroup>
+```rust Rust Signature
+#[tauri::command]
+async fn wt_join_room(
+    state: State<'_, AppState>,
+    window: Window,
+    room_code: String,
+    media_id: i64,
+    media_title: String,
+    media_match_key: Option<String>,
+    nickname: String,
+) -> Result<watch_together::RoomInfo, String>
+```
+
+```typescript TypeScript
+const room = await invoke<WatchRoom>('wt_join_room', {
+  roomCode: 'ABC123',
+  mediaId: 456,  // Your local media ID for the same content
+  mediaTitle: 'The Matrix',
+  mediaMatchKey: 'tmdb:603',
+  nickname: 'Bob'
+});
+```
+</CodeGroup>
+
+<ParamField path="room_code" type="string" required>
+  6-character room code from host
+</ParamField>
+
+<ParamField path="media_id" type="number" required>
+  Your local media item ID
+</ParamField>
+
+<ParamField path="media_title" type="string" required>
+  Media title
+</ParamField>
+
+<ParamField path="media_match_key" type="string | null">
+  Media identifier (should match host's)
+</ParamField>
+
+<ParamField path="nickname" type="string" required>
+  Your display name
+</ParamField>
+
+<Warning>
+  All participants must have the same media file (same duration) for sync to work correctly. Use `media_match_key` to verify everyone has the right content.
+</Warning>
+
+---
+
+### leave_watch_together_room
+
+Leave the current Watch Together session.
+
+<CodeGroup>
+```rust Rust Signature
+#[tauri::command]
+async fn wt_leave_room(
+    state: State<'_, AppState>,
+) -> Result<(), String>
+```
+
+```typescript TypeScript
+await invoke('wt_leave_room');
+```
+</CodeGroup>
+
+<Info>
+  If the host leaves, the room is destroyed and all participants are disconnected.
+</Info>
+
+---
+
+## Playback Control
+
+### wt_set_ready
+
+Mark yourself as ready to start (after loading the video).
+
+<CodeGroup>
+```rust Rust Signature
+#[tauri::command]
+async fn wt_set_ready(
+    state: State<'_, AppState>,
+    duration: f64,
+) -> Result<(), String>
+```
+
+```typescript TypeScript
+// After video loads
+const duration = videoElement.duration;
+await invoke('wt_set_ready', { duration });
+```
+</CodeGroup>
+
+<ParamField path="duration" type="number" required>
+  Video duration in seconds (for validation)
+</ParamField>
+
+<Note>
+  All participants must call `wt_set_ready` before the host can start playback.
+</Note>
+
+---
+
+### wt_start_playback
+
+Start synchronized playback (host only).
+
+<CodeGroup>
+```rust Rust Signature
+#[tauri::command]
+async fn wt_start_playback(
+    state: State<'_, AppState>,
+) -> Result<(), String>
+```
+
+```typescript TypeScript
+// Host only - after all participants are ready
+await invoke('wt_start_playback');
+```
+</CodeGroup>
+
+<Info>
+  This broadcasts a `PlaybackStarted` event to all participants, triggering synchronized playback start.
+</Info>
+
+---
+
+### send_friend_request
+
+<Note>
+  Not implemented. Watch Together uses ephemeral rooms - no persistent friend lists.
+</Note>
+
+---
+
+### accept_friend_request
+
+<Note>
+  Not implemented. Use room codes instead.
+</Note>
+
+---
+
+### get_activity_feed
+
+Alias for `get_watch_stats` and `get_recent_watch_activities`.
+
+See [Library Management](/api/tauri/library) for watch history commands.
+
+---
+
+### set_privacy_settings
+
+<Note>
+  Not implemented. Watch Together rooms are private by default (require 6-character code to join).
+</Note>
+
+---
+
+## Sync Commands
+
+### wt_send_sync
+
+Send a playback command (play/pause/seek) to all participants.
+
+<CodeGroup>
+```rust Rust Signature
+#[tauri::command]
+async fn wt_send_sync(
+    state: State<'_, AppState>,
+    action: String,
+    position: f64,
+) -> Result<(), String>
+```
+
+```typescript TypeScript
+// Pause at current position
+await invoke('wt_send_sync', {
+  action: 'pause',
+  position: videoElement.currentTime
+});
+
+// Seek to 5 minutes
+await invoke('wt_send_sync', {
+  action: 'seek',
+  position: 300.0
+});
+```
+</CodeGroup>
+
+<ParamField path="action" type="'play' | 'pause' | 'seek'" required>
+  Sync command type
+</ParamField>
+
+<ParamField path="position" type="number" required>
+  Playback position in seconds
+</ParamField>
+
+<Warning>
+  All participants receive this command and should apply it to their local player.
+</Warning>
+
+---
+
+### wt_launch_mpv
+
+Launch MPV in Watch Together sync mode.
+
+<CodeGroup>
+```rust Rust Signature
+#[tauri::command]
+async fn wt_launch_mpv(
+    state: State<'_, AppState>,
+    media_id: i64,
+    session_id: String,
+    start_position: f64,
+) -> Result<u32, String>
+```
+
+```typescript TypeScript
+const pid = await invoke<number>('wt_launch_mpv', {
+  mediaId: 123,
+  sessionId: 'room_abc123',
+  startPosition: 0.0
+});
+
+console.log(`MPV started with PID: ${pid}`);
+```
+</CodeGroup>
+
+<ParamField path="media_id" type="number" required>
+  Media item to play
+</ParamField>
+
+<ParamField path="session_id" type="string" required>
+  Watch Together session ID (room code)
+</ParamField>
+
+<ParamField path="start_position" type="number" required>
+  Initial position in seconds
+</ParamField>
+
+<Info>
+  MPV is launched with IPC enabled. The Watch Together controller sends sync commands via named pipe.
+</Info>
+
+---
+
+### wt_send_mpv_command
+
+Send a sync command to MPV via IPC.
+
+<CodeGroup>
+```rust Rust Signature
+#[tauri::command]
+async fn wt_send_mpv_command(
+    state: State<'_, AppState>,
+    session_id: String,
+    action: String,
+    position: f64,
+) -> Result<(), String>
+```
+
+```typescript TypeScript
+// Internal use - called by sync event handler
+await invoke('wt_send_mpv_command', {
+  sessionId: 'room_abc123',
+  action: 'seek',
+  position: 120.0
+});
+```
+</CodeGroup>
+
+---
+
+## State Queries
+
+### wt_get_room_state
+
+Get current room information.
+
+<CodeGroup>
+```rust Rust Signature
+#[tauri::command]
+async fn wt_get_room_state(
+    state: State<'_, AppState>,
+) -> Result<Option<watch_together::RoomInfo>, String>
+```
+
+```typescript TypeScript
+const room = await invoke<WatchRoom | null>('wt_get_room_state');
+
+if (room) {
+  console.log(`${room.participants.length} participants`);
+}
+```
+</CodeGroup>
+
+---
+
+### wt_is_active
+
+Check if in an active Watch Together session.
+
+<CodeGroup>
+```rust Rust Signature
+#[tauri::command]
+async fn wt_is_active(
+    state: State<'_, AppState>,
+) -> Result<bool, String>
+```
+
+```typescript TypeScript
+const isActive = await invoke<boolean>('wt_is_active');
+```
+</CodeGroup>
+
+---
+
+### wt_get_client_id
+
+Get your unique client ID for the current session.
+
+<CodeGroup>
+```rust Rust Signature
+#[tauri::command]
+async fn wt_get_client_id(
+    state: State<'_, AppState>,
+) -> Result<String, String>
+```
+
+```typescript TypeScript
+const clientId = await invoke<string>('wt_get_client_id');
+```
+</CodeGroup>
+
+---
+
+## Events
+
+### room_updated
+
+Emitted when room state changes (participant joins/leaves, etc.).
+
+<CodeGroup>
+```typescript TypeScript
+import { listen } from '@tauri-apps/api/event';
+
+await listen<WatchEvent>('watch-together-event', (event) => {
+  if (event.payload.type === 'room_updated') {
+    console.log('Room updated:', event.payload.room);
+  }
+});
+```
+</CodeGroup>
+
+---
+
+### sync_command
+
+Emitted when a sync command is received.
+
+<CodeGroup>
+```typescript TypeScript
+await listen<WatchEvent>('watch-together-event', (event) => {
+  if (event.payload.type === 'sync_command') {
+    const cmd = event.payload.command;
+    if (cmd.action === 'seek') {
+      videoElement.currentTime = cmd.position;
+    } else if (cmd.action === 'pause') {
+      videoElement.pause();
+    } else if (cmd.action === 'play') {
+      videoElement.play();
+    }
+  }
+});
+```
+</CodeGroup>
+
+---
+
+### state_update
+
+Server broadcasts authoritative position every second for sync correction.
+
+<CodeGroup>
+```typescript TypeScript
+await listen<WatchEvent>('watch-together-event', (event) => {
+  if (event.payload.type === 'state_update') {
+    const serverPosition = event.payload.position;
+    const localPosition = videoElement.currentTime;
+    const drift = Math.abs(serverPosition - localPosition);
+    
+    // Correct drift if > 200ms
+    if (drift > 0.2) {
+      videoElement.currentTime = serverPosition;
+    }
+  }
+});
+```
+</CodeGroup>
+
+---
+
+## Types
+
+### Participant
+
+```typescript
+interface Participant {
+  id: string;           // UUID
+  nickname: string;     // Display name
+  is_host: boolean;     // Whether this is the room host
+  is_ready: boolean;    // Whether ready to start
+  duration?: number;    // Video duration (for validation)
+}
+```
+
+### WatchRoom
+
+```typescript
+interface WatchRoom {
+  code: string;              // 6-char room code
+  host_id: string;           // Host UUID
+  media_title: string;       // Content title
+  media_id: number;          // Local media ID
+  participants: Participant[];
+  is_playing: boolean;       // Playback state
+  current_position: number;  // Position in seconds
+}
+```
+
+### SyncCommand
+
+```typescript
+interface SyncCommand {
+  action: 'play' | 'pause' | 'seek';
+  position: number;     // Seconds
+  from?: string;        // Sender UUID
+  timestamp?: number;   // Unix timestamp (ms)
+}
+```

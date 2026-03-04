@@ -1,0 +1,346 @@
+---
+title: WatchTogetherModal
+description: Watch Together modal component for synchronized viewing sessions
+---
+
+The `WatchTogetherModal` component provides the UI for creating and joining Watch Together rooms, enabling synchronized video playback across multiple users.
+
+## Overview
+
+This component manages the complete Watch Together experience, from room creation/joining through the lobby phase and into synchronized playback. It integrates with WebSocket events for real-time updates and coordinates MPV player launches.
+
+Source: `src/components/WatchTogether/WatchTogetherModal.tsx:73-517`
+
+## Props
+
+| Prop | Type | Description |
+|------|------|-------------|
+| `isOpen` | `boolean` | Controls modal visibility |
+| `onClose` | `() => void` | Callback when modal is closed |
+| `selectedMedia` | `MediaItem \| undefined` | Media item to watch together |
+| `activeRoom` | `WatchRoom \| null` | Current active room state |
+| `sessionId` | `string` | Current session identifier |
+| `isPlaying` | `boolean` | Current playback state |
+| `onSessionChange` | `(room, sessionId, isPlaying, media?) => void` | Session state change handler |
+
+## State Management
+
+### View States
+
+The modal operates in three distinct views:
+
+```typescript
+type ModalView = 'menu' | 'lobby' | 'playing';
+```
+
+- **menu**: Initial view for creating/joining rooms
+- **lobby**: Room lobby with participant list and ready state
+- **playing**: Active playback view with sync status
+
+### Local State
+
+```typescript
+const [view, setView] = useState<ModalView>('menu');
+const [nickname, setNickname] = useState('');
+const [roomCode, setRoomCode] = useState('');
+const [isLoading, setIsLoading] = useState(false);
+const [error, setError] = useState<string | null>(null);
+const [isConnected, setIsConnected] = useState(true);
+const [lastSyncTime, setLastSyncTime] = useState<number | undefined>();
+const [currentUserId, setCurrentUserId] = useState('');
+```
+
+## WebSocket Events
+
+The component listens for Watch Together events from the backend:
+
+### Event Types
+
+**room_updated / participant_changed**
+```typescript
+// Room state changed (participant joined/left, ready state)
+if (data.room) {
+  const roomIsPlaying = data.room.is_playing || data.room.state === 'playing';
+  onSessionChange(data.room, sessionId, roomIsPlaying, selectedMedia);
+}
+```
+Source: `src/components/WatchTogether/WatchTogetherModal.tsx:196-200`
+
+**sync_command / state_update**
+```typescript
+// Sync updates from backend relay
+setLastSyncTime(Date.now());
+setIsConnected(true);
+```
+Source: `src/components/WatchTogether/WatchTogetherModal.tsx:203-210`
+
+**playback_started**
+```typescript
+// Host started playback - launch MPV for participants
+setView('playing');
+launchMpv(data.position || 0);
+onSessionChange(activeRoom, sessionId, true, selectedMedia);
+```
+Source: `src/components/WatchTogether/WatchTogetherModal.tsx:213-219`
+
+**disconnected**
+```typescript
+// Connection lost - reset state
+setIsConnected(false);
+setCurrentUserId('');
+mpvLaunchedRef.current = false;
+onSessionChange(null, '', false);
+setView('menu');
+```
+Source: `src/components/WatchTogether/WatchTogetherModal.tsx:225-233`
+
+## Room Creation Flow
+
+### Creating a Room
+
+```typescript
+const handleCreateRoom = async () => {
+  if (!selectedMedia || !nickname.trim()) {
+    setError('Please select media and enter a nickname');
+    return;
+  }
+
+  setIsLoading(true);
+  localStorage.setItem('wt_nickname', nickname);
+
+  try {
+    const newRoom = await wtCreateRoom(
+      selectedMedia.id,
+      selectedMedia.title,
+      buildMediaMatchKey(selectedMedia),
+      nickname.trim()
+    );
+    
+    const localClientId = await wtGetClientId();
+    setCurrentUserId(localClientId);
+    onSessionChange(newRoom, newRoom.code, false, selectedMedia);
+    setView('lobby');
+  } catch (err) {
+    setError(err.message);
+  } finally {
+    setIsLoading(false);
+  }
+};
+```
+Source: `src/components/WatchTogether/WatchTogetherModal.tsx:257-291`
+
+### Joining a Room
+
+```typescript
+const handleJoinRoom = async () => {
+  const joinedRoom = await wtJoinRoom(
+    roomCode.trim().toUpperCase(),
+    selectedMedia.id,
+    selectedMedia.title,
+    buildMediaMatchKey(selectedMedia),
+    nickname.trim()
+  );
+  
+  const roomIsPlaying = joinedRoom.is_playing || joinedRoom.state === 'playing';
+  onSessionChange(joinedRoom, joinedRoom.code, roomIsPlaying, selectedMedia);
+  
+  if (roomIsPlaying) {
+    setView('playing');
+    await launchMpv(joinedRoom.current_position || 0);
+  } else {
+    setView('lobby');
+  }
+};
+```
+Source: `src/components/WatchTogether/WatchTogetherModal.tsx:293-335`
+
+## Media Matching
+
+The component builds a media match key to ensure participants are watching the same content:
+
+```typescript
+function buildMediaMatchKey(media?: MediaItem): string | undefined {
+  const tokens: string[] = [];
+
+  if (media.cloud_file_id?.trim()) {
+    tokens.push(`cloud:${media.cloud_file_id.trim().toLowerCase()}`);
+  }
+
+  if (media.file_path?.trim()) {
+    const fileName = media.file_path.split('/').pop()?.trim();
+    if (fileName) {
+      tokens.push(`file:${fileName.toLowerCase()}`);
+    }
+  }
+
+  if (media.tmdb_id?.trim()) {
+    tokens.push(`tmdb:${media.tmdb_id.trim().toLowerCase()}`);
+  }
+
+  const title = media.title?.trim();
+  if (title) {
+    tokens.push(`title:${title.toLowerCase()}`);
+  }
+
+  return Array.from(new Set(tokens)).join('|');
+}
+```
+Source: `src/components/WatchTogether/WatchTogetherModal.tsx:39-71`
+
+## MPV Player Integration
+
+### Launching MPV
+
+The component manages MPV player launches with race condition prevention:
+
+```typescript
+const launchMpv = useCallback(async (startPosition: number = 0): Promise<void> => {
+  // Prevent double launch
+  if (mpvLaunchedRef.current) {
+    console.log('[WT] MPV already launched, skipping');
+    return;
+  }
+
+  const media = selectedMediaRef.current;
+  const session = sessionIdRef.current;
+
+  if (!media || !session) {
+    setError('Cannot launch MPV: No media or session');
+    return;
+  }
+
+  // Mark as launched BEFORE the async call to prevent race conditions
+  mpvLaunchedRef.current = true;
+
+  try {
+    const pid = await wtLaunchMpv(media.id, session, startPosition);
+    console.log('[WT] MPV launched with PID:', pid);
+    setIsConnected(true);
+  } catch (err) {
+    setError(err.message);
+    mpvLaunchedRef.current = false; // Reset on error
+  }
+}, []);
+```
+Source: `src/components/WatchTogether/WatchTogetherModal.tsx:138-184`
+
+### MPV Ended Handler
+
+```typescript
+useEffect(() => {
+  const unlisten = listen('wt-mpv-ended', () => {
+    console.log('[WT] MPV ended');
+    mpvLaunchedRef.current = false;
+    setView('lobby');
+    onSessionChange(activeRoom, sessionId, false, selectedMedia);
+  });
+
+  return () => unlisten.then(fn => fn());
+}, [onSessionChange]);
+```
+Source: `src/components/WatchTogether/WatchTogetherModal.tsx:243-255`
+
+## UI Components
+
+### Menu View
+
+Provides nickname input and tabs for creating or joining rooms:
+
+- Selected media display
+- Nickname input (persisted to localStorage)
+- Create Room tab with description
+- Join Room tab with 6-character code input
+- Error display
+
+### Lobby View
+
+Delegates to `RoomLobby` component:
+
+```typescript
+<RoomLobby
+  room={activeRoom}
+  isHost={isHost}
+  currentUserId={resolvedCurrentUserId}
+  mediaDuration={selectedMedia?.duration_seconds}
+  onPlaybackStart={handlePlaybackStart}
+  onLaunchMpv={launchMpv}
+  onLeave={handleLeave}
+/>
+```
+Source: `src/components/WatchTogether/WatchTogetherModal.tsx:458-468`
+
+### Playing View
+
+Shows synchronized playback status:
+
+- Watch Together icon
+- Participant count
+- Close button (stay in room)
+- Leave Room button
+- Sync status overlay (via `SyncStatusIndicator`)
+
+## Best Practices
+
+### Stale Closure Prevention
+
+Use refs for values accessed in event listeners:
+
+```typescript
+const selectedMediaRef = useRef(selectedMedia);
+const sessionIdRef = useRef(sessionId);
+const activeRoomRef = useRef(activeRoom);
+
+useEffect(() => {
+  selectedMediaRef.current = selectedMedia;
+}, [selectedMedia]);
+```
+Source: `src/components/WatchTogether/WatchTogetherModal.tsx:92-109`
+
+### Session State Synchronization
+
+Sync view with session state when modal opens:
+
+```typescript
+useEffect(() => {
+  if (isOpen) {
+    if (isPlaying) {
+      setView('playing');
+    } else if (activeRoom) {
+      setView('lobby');
+    } else {
+      setView('menu');
+    }
+  }
+}, [isOpen, activeRoom, isPlaying]);
+```
+Source: `src/components/WatchTogether/WatchTogetherModal.tsx:118-129`
+
+### Nickname Persistence
+
+```typescript
+// Load saved nickname on mount
+useEffect(() => {
+  const saved = localStorage.getItem('wt_nickname');
+  if (saved) setNickname(saved);
+}, []);
+
+// Save nickname when creating/joining
+localStorage.setItem('wt_nickname', nickname);
+```
+Source: `src/components/WatchTogether/WatchTogetherModal.tsx:132-136`
+
+## Related Components
+
+- [RoomLobby](/components/room-lobby) - Room lobby UI with participants
+- [ParticipantList](/components/participant-list) - Displays room participants
+- [SyncStatusIndicator](/components/sync-status-indicator) - Shows sync connection status
+
+## API Functions
+
+- `wtCreateRoom(mediaId, title, matchKey, nickname)` - Creates a new room
+- `wtJoinRoom(code, mediaId, title, matchKey, nickname)` - Joins existing room
+- `wtGetClientId()` - Gets local client identifier
+- `wtLaunchMpv(mediaId, sessionId, startPosition)` - Launches MPV player
+- `wtLeaveRoom()` - Leaves current room
+- `wtStartPlayback()` - Starts playback (host only)
+- `wtSetReady(duration)` - Marks participant as ready

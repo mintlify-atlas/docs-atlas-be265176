@@ -1,0 +1,359 @@
+---
+title: 'TMDB Metadata'
+description: 'Search and fetch movie/TV show metadata from The Movie Database'
+icon: 'database'
+---
+
+## Overview
+
+Metadata commands integrate with TMDB (The Movie Database) API to fetch posters, overviews, episode details, and other enrichment data for your media library.
+
+## Commands
+
+### search_tmdb
+
+Search TMDB for movies and TV shows by title.
+
+<CodeGroup>
+```rust Rust Signature
+#[tauri::command]
+async fn search_tmdb(
+    state: State<'_, AppState>,
+    query: String,
+) -> Result<TmdbSearchResponse, String>
+```
+
+```typescript TypeScript
+import { invoke } from '@tauri-apps/api/tauri';
+
+const results = await invoke<TmdbSearchResponse>('search_tmdb', {
+  query: 'The Matrix'
+});
+
+results.results.forEach(item => {
+  console.log(`${item.title || item.name} (${item.media_type})`);
+});
+```
+</CodeGroup>
+
+<ParamField path="query" type="string" required>
+  Search query (movie or TV show title)
+</ParamField>
+
+<ResponseField name="TmdbSearchResponse" type="object">
+  <Expandable title="Response fields">
+    <ResponseField name="results" type="array">
+      Array of search results
+      
+      <Expandable title="TmdbSearchResult fields">
+        <ResponseField name="id" type="number">
+          TMDB ID
+        </ResponseField>
+        <ResponseField name="title" type="string | undefined">
+          Movie title
+        </ResponseField>
+        <ResponseField name="name" type="string | undefined">
+          TV show name
+        </ResponseField>
+        <ResponseField name="media_type" type="'movie' | 'tv'">
+          Content type
+        </ResponseField>
+        <ResponseField name="poster_path" type="string | undefined">
+          TMDB poster path (use with `https://image.tmdb.org/t/p/w500`)
+        </ResponseField>
+        <ResponseField name="overview" type="string | undefined">
+          Plot summary
+        </ResponseField>
+        <ResponseField name="release_date" type="string | undefined">
+          Release date (movies)
+        </ResponseField>
+        <ResponseField name="first_air_date" type="string | undefined">
+          First air date (TV shows)
+        </ResponseField>
+        <ResponseField name="vote_average" type="number | undefined">
+          Rating (0-10)
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+    <ResponseField name="total_results" type="number">
+      Total number of results
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+### get_tmdb_details
+
+Alias for `get_tv_details`. Fetch detailed information about a TV show.
+
+<CodeGroup>
+```rust Rust Signature
+#[tauri::command]
+async fn get_tv_details(
+    state: State<'_, AppState>,
+    tv_id: i64,
+) -> Result<TvShowDetails, String>
+```
+
+```typescript TypeScript
+const details = await invoke<TvShowDetails>('get_tv_details', {
+  tvId: 1399  // TMDB ID for Game of Thrones
+});
+
+console.log(`${details.name} has ${details.number_of_seasons} seasons`);
+```
+</CodeGroup>
+
+<ParamField path="tv_id" type="number" required>
+  TMDB TV show ID
+</ParamField>
+
+<ResponseField name="TvShowDetails" type="object">
+  <Expandable title="Response fields">
+    <ResponseField name="id" type="number">
+      TMDB ID
+    </ResponseField>
+    <ResponseField name="name" type="string">
+      Show title
+    </ResponseField>
+    <ResponseField name="poster_path" type="string | undefined">
+      TMDB poster path
+    </ResponseField>
+    <ResponseField name="backdrop_path" type="string | undefined">
+      TMDB backdrop path
+    </ResponseField>
+    <ResponseField name="overview" type="string | undefined">
+      Show description
+    </ResponseField>
+    <ResponseField name="number_of_seasons" type="number">
+      Total season count
+    </ResponseField>
+    <ResponseField name="seasons" type="array">
+      Array of season information (excludes Season 0/Specials)
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+### fix_match
+
+Update a media item's metadata by fetching from a specific TMDB ID.
+
+<CodeGroup>
+```rust Rust Signature
+#[tauri::command]
+async fn fix_match(
+    window: Window,
+    state: State<'_, AppState>,
+    media_id: i64,
+    tmdb_id: String,
+    media_type: String,
+) -> Result<ApiResponse, String>
+```
+
+```typescript TypeScript
+// User selected the wrong match - fix it
+await invoke('fix_match', {
+  mediaId: 123,
+  tmdbId: '603',     // TMDB ID for The Matrix
+  mediaType: 'movie'
+});
+```
+</CodeGroup>
+
+<ParamField path="media_id" type="number" required>
+  Database ID of the media item to update
+</ParamField>
+
+<ParamField path="tmdb_id" type="string" required>
+  Correct TMDB ID
+</ParamField>
+
+<ParamField path="media_type" type="'movie' | 'tv'" required>
+  Media type
+</ParamField>
+
+<Info>
+  This command:
+  1. Fetches metadata from TMDB (poster, overview, etc.)
+  2. Downloads the poster to cache
+  3. Updates the database entry
+  4. Emits `media-metadata-updated` and `library-updated` events
+</Info>
+
+<Warning>
+  Has a 40-second timeout to prevent hanging on slow networks. Retries automatically on connection errors.
+</Warning>
+
+---
+
+### download_poster
+
+Posters are automatically downloaded during scanning and fix_match operations. No manual download command needed.
+
+<Info>
+  Posters are cached in `%APPDATA%/StreamVault/image_cache/` and served via Tauri's asset protocol.
+</Info>
+
+---
+
+### get_cached_episode_metadata
+
+Alias for `get_tv_season_episodes`. Fetch episode metadata for a specific season.
+
+<CodeGroup>
+```rust Rust Signature
+#[tauri::command]
+async fn get_tv_season_episodes(
+    state: State<'_, AppState>,
+    tv_id: i64,
+    season_number: i32,
+) -> Result<TvSeasonDetails, String>
+```
+
+```typescript TypeScript
+const season = await invoke<TvSeasonDetails>('get_tv_season_episodes', {
+  tvId: 1399,
+  seasonNumber: 1
+});
+
+season.episodes.forEach(ep => {
+  console.log(`E${ep.episode_number}: ${ep.name}`);
+});
+```
+</CodeGroup>
+
+<ParamField path="tv_id" type="number" required>
+  TMDB TV show ID
+</ParamField>
+
+<ParamField path="season_number" type="number" required>
+  Season number (1-based)
+</ParamField>
+
+<ResponseField name="TvSeasonDetails" type="object">
+  <Expandable title="Response fields">
+    <ResponseField name="season_number" type="number">
+      Season number
+    </ResponseField>
+    <ResponseField name="name" type="string">
+      Season title
+    </ResponseField>
+    <ResponseField name="episodes" type="array">
+      Array of episode information
+      
+      <Expandable title="TvEpisodeInfo fields">
+        <ResponseField name="episode_number" type="number">
+          Episode number
+        </ResponseField>
+        <ResponseField name="name" type="string">
+          Episode title
+        </ResponseField>
+        <ResponseField name="overview" type="string | undefined">
+          Episode description
+        </ResponseField>
+        <ResponseField name="still_path" type="string | undefined">
+          Episode thumbnail path (TMDB)
+        </ResponseField>
+        <ResponseField name="air_date" type="string | undefined">
+          Original air date (ISO 8601)
+        </ResponseField>
+        <ResponseField name="runtime" type="number | undefined">
+          Runtime in minutes
+        </ResponseField>
+        <ResponseField name="vote_average" type="number | undefined">
+          Episode rating (0-10)
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<Info>
+  Results are cached in the database. Subsequent requests for the same season return instantly from cache.
+</Info>
+
+---
+
+### refresh_series_metadata
+
+Force refresh episode metadata for a TV series (re-downloads images for owned episodes only).
+
+<CodeGroup>
+```rust Rust Signature
+#[tauri::command]
+async fn refresh_series_metadata(
+    state: State<'_, AppState>,
+    tv_id: i64,
+    series_title: String,
+) -> Result<String, String>
+```
+
+```typescript TypeScript
+const result = await invoke<string>('refresh_series_metadata', {
+  tvId: 1399,
+  seriesTitle: 'Game of Thrones'
+});
+
+console.log(result); // "Refreshed 73 episodes, 73 images downloaded"
+```
+</CodeGroup>
+
+<ParamField path="tv_id" type="number" required>
+  TMDB TV show ID
+</ParamField>
+
+<ParamField path="series_title" type="string" required>
+  Show title (for logging)
+</ParamField>
+
+<Note>
+  This command:
+  - Only fetches metadata for episodes you actually have in your library
+  - Clears old cached metadata before fetching
+  - Downloads episode stills/thumbnails
+  - Updates both the cache table and media entries
+</Note>
+
+---
+
+## TMDB Image URLs
+
+TMDB returns image paths like `/abc123.jpg`. Construct full URLs using:
+
+```typescript
+const posterUrl = `https://image.tmdb.org/t/p/w500${poster_path}`;
+const backdropUrl = `https://image.tmdb.org/t/p/original${backdrop_path}`;
+```
+
+Available sizes:
+- Posters: `w92`, `w185`, `w342`, `w500`, `w780`, `original`
+- Backdrops: `w300`, `w780`, `w1280`, `original`
+- Stills (episodes): `w92`, `w185`, `w300`, `original`
+
+---
+
+## Events
+
+### media-metadata-updated
+
+Emitted when metadata is updated via `fix_match`.
+
+<CodeGroup>
+```typescript TypeScript
+import { listen } from '@tauri-apps/api/event';
+
+await listen<{
+  type: 'metadata-updated';
+  title: string;
+  media_id: number;
+  parent_id?: number;
+  media_type: string;
+  tmdb_id: string;
+}>('media-metadata-updated', (event) => {
+  console.log(`Updated: ${event.payload.title}`);
+});
+```
+</CodeGroup>

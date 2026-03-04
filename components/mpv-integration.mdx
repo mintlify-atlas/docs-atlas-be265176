@@ -1,0 +1,401 @@
+---
+title: MPV Integration
+description: External MPV player integration with IPC progress tracking
+---
+
+## Overview
+
+The MPV integration allows StreamVault to launch the external MPV player and track playback progress in real-time using a Lua script-based IPC mechanism.
+
+## Architecture
+
+**Backend**: Rust module at `/home/daytona/workspace/source/src-tauri/src/mpv_ipc.rs`
+
+### Key Components
+
+1. **Lua Script Generation**: Creates a tracking script that MPV loads
+2. **Progress File**: JSON file updated by MPV every 2 seconds
+3. **Process Monitoring**: Background thread monitors MPV process
+4. **Database Sync**: Progress saved to database periodically
+
+## Launch Flow
+
+### 1. Create Tracking Script
+
+```rust
+fn create_lua_script(media_id: i64) -> Result<PathBuf, String> {
+    let progress_dir = get_progress_dir()
+    let script_path = progress_dir.join(format!("tracker_{}.lua", media_id))
+    let progress_file = get_progress_file_path(media_id)
+    
+    let script_content = get_lua_script_content(&progress_file)
+    fs::write(&script_path, script_content)?;
+    
+    Ok(script_path)
+}
+```
+
+**Source**: `/home/daytona/workspace/source/src-tauri/src/mpv_ipc.rs:132-148`
+
+### 2. Launch MPV Process
+
+```rust
+pub fn launch_mpv_with_tracking(
+    mpv_path: &str,
+    file_or_url: &str,
+    media_id: i64,
+    start_position: f64,
+    auth_header: Option<&str>,
+    cache_settings: Option<&CloudCacheSettings>,
+) -> Result<u32, String>
+```
+
+**Source**: `/home/daytona/workspace/source/src-tauri/src/mpv_ipc.rs:219-226`
+
+### 3. Monitor Playback
+
+```rust
+pub fn monitor_mpv_and_save_progress(
+    db: &Database,
+    media_id: i64,
+    pid: u32,
+) -> MpvLaunchResult {
+    // Poll process status
+    while is_mpv_running(pid) {
+        std::thread::sleep(Duration::from_millis(500))
+        
+        // Read progress and update database
+        if let Some(progress) = read_mpv_progress(media_id) {
+            if progress.duration > 0.0 {
+                db.update_progress(media_id, progress.position, progress.duration)
+            }
+        }
+    }
+    
+    // Save final progress after exit
+    let final_progress = read_mpv_progress(media_id)
+    // ...
+}
+```
+
+**Source**: `/home/daytona/workspace/source/src-tauri/src/mpv_ipc.rs:393-460`
+
+## Progress Tracking
+
+### Progress Data Structure
+
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct MpvProgressInfo {
+    pub position: f64,      // Current time in seconds
+    pub duration: f64,      // Total duration in seconds
+    pub paused: bool,       // Playback state
+    pub eof_reached: bool,  // End of file reached
+    pub quit_time: Option<i64>,  // Unix timestamp of last save
+}
+```
+
+**Source**: `/home/daytona/workspace/source/src-tauri/src/mpv_ipc.rs:12-18`
+
+### Lua Script Tracking
+
+The Lua script injected into MPV tracks progress:
+
+```lua
+-- StreamVault Progress Tracker for MPV
+local progress_file = "{path}"
+local save_interval = 2 -- seconds
+
+local function get_progress_data()
+    local pos = mp.get_property_number("time-pos")
+    local duration = mp.get_property_number("duration")
+    local paused = mp.get_property_bool("pause")
+    local eof = mp.get_property_bool("eof-reached")
+    
+    return string.format(
+        '{{"position":%.3f,"duration":%.3f,"paused":%s,"eof_reached":%s,"quit_time":%d}}',
+        pos, duration,
+        paused and "true" or "false",
+        eof and "true" or "false",
+        os.time()
+    )
+end
+
+local function save_progress()
+    local data = get_progress_data()
+    local file = io.open(progress_file, "w")
+    if file then
+        file:write(data)
+        file:close()
+    end
+end
+
+-- Periodic save timer
+mp.add_periodic_timer(save_interval, save_progress)
+
+-- Save on events
+mp.observe_property("pause", "bool", save_progress)
+mp.register_event("seek", save_progress)
+mp.register_event("shutdown", save_progress)
+mp.register_event("end-file", save_progress)
+```
+
+**Source**: `/home/daytona/workspace/source/src-tauri/src/mpv_ipc.rs:36-130`
+
+## Cloud Streaming
+
+### Authentication Headers
+
+For cloud files, pass authorization headers:
+
+```rust
+cmd.arg(format!(
+    "--http-header-fields={}", 
+    "Authorization: Bearer xxx"
+))
+```
+
+**Source**: `/home/daytona/workspace/source/src-tauri/src/mpv_ipc.rs:280-282`
+
+### Disk Caching
+
+```rust
+pub struct CloudCacheSettings {
+    pub enabled: bool,
+    pub cache_dir: String,
+    pub max_size_mb: u32,
+}
+```
+
+When enabled, streams are saved to disk using MPV's `--stream-record`:
+
+```rust
+let cache_file = cache_dir.join(format!("media_{}/video.mp4", media_id))
+cmd.arg(format!("--stream-record={}", cache_file))
+cmd.arg("--cache=yes")
+cmd.arg(format!("--demuxer-max-bytes={}", cache_mb * 1024 * 1024))
+```
+
+**Source**: `/home/daytona/workspace/source/src-tauri/src/mpv_ipc.rs:181-336`
+
+## Frontend Integration
+
+### PlayerModal Component
+
+```tsx
+import { PlayerModal } from '@/components/PlayerModal'
+
+function MediaCard({ media }) {
+  const [showPlayerModal, setShowPlayerModal] = useState(false)
+
+  const handleSelectPlayer = async (player: 'mpv' | 'vlc' | 'builtin') => {
+    if (player === 'mpv') {
+      await invoke('play_with_mpv', {
+        mediaId: media.id,
+        filePath: media.file_path,
+        startPosition: media.current_position || 0
+      })
+    }
+  }
+
+  return (
+    <>
+      <button onClick={() => setShowPlayerModal(true)}>
+        Play
+      </button>
+      
+      <PlayerModal
+        open={showPlayerModal}
+        onOpenChange={setShowPlayerModal}
+        onSelectPlayer={handleSelectPlayer}
+        title={media.title}
+      />
+    </>
+  )
+}
+```
+
+### PlayerModal Interface
+
+```tsx
+interface PlayerModalProps {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onSelectPlayer: (player: 'mpv' | 'vlc' | 'builtin' | 'stream') => void
+  title: string
+  hasTmdbId?: boolean
+}
+```
+
+**Source**: `/home/daytona/workspace/source/src/components/PlayerModal.tsx:5-11`
+
+## Tauri Commands
+
+### Play with MPV
+
+```rust
+#[tauri::command]
+async fn play_with_mpv(
+    state: State<'_, AppState>,
+    media_id: i64,
+    file_path: String,
+    start_position: f64,
+) -> Result<(), String> {
+    let config = state.config.lock().unwrap();
+    let mpv_path = &config.player.mpv_path;
+    
+    // Launch MPV
+    let pid = launch_mpv_with_tracking(
+        mpv_path,
+        &file_path,
+        media_id,
+        start_position,
+        None,
+        None,
+    )?;
+    
+    // Monitor in background thread
+    let db = state.db.clone();
+    std::thread::spawn(move || {
+        monitor_mpv_and_save_progress(&db, media_id, pid);
+    });
+    
+    Ok(())
+}
+```
+
+### Play Cloud Media
+
+```rust
+#[tauri::command]
+async fn play_cloud_with_mpv(
+    state: State<'_, AppState>,
+    media_id: i64,
+    stream_url: String,
+    access_token: String,
+    start_position: f64,
+) -> Result<(), String> {
+    let config = state.config.lock().unwrap();
+    let mpv_path = &config.player.mpv_path;
+    
+    let auth_header = format!("Authorization: Bearer {}", access_token);
+    
+    let cache_settings = CloudCacheSettings {
+        enabled: config.player.enable_cloud_cache,
+        cache_dir: config.player.cloud_cache_dir.clone(),
+        max_size_mb: config.player.cloud_cache_max_mb,
+    };
+    
+    let pid = launch_mpv_with_tracking(
+        mpv_path,
+        &stream_url,
+        media_id,
+        start_position,
+        Some(&auth_header),
+        Some(&cache_settings),
+    )?;
+    
+    // Monitor in background
+    let db = state.db.clone();
+    std::thread::spawn(move || {
+        monitor_mpv_and_save_progress(&db, media_id, pid);
+    });
+    
+    Ok(())
+}
+```
+
+## Progress Polling
+
+### Read Progress
+
+```rust
+pub fn read_mpv_progress(media_id: i64) -> Option<MpvProgressInfo> {
+    let progress_file = get_progress_file_path(media_id)
+    
+    if !progress_file.exists() {
+        return None
+    }
+    
+    let content = fs::read_to_string(&progress_file).ok()?
+    serde_json::from_str(&content).ok()
+}
+```
+
+**Source**: `/home/daytona/workspace/source/src-tauri/src/mpv_ipc.rs:150-160`
+
+### Clear Progress
+
+```rust
+pub fn clear_mpv_progress(media_id: i64) {
+    let progress_file = get_progress_file_path(media_id)
+    let script_file = get_progress_dir()
+        .join(format!("tracker_{}.lua", media_id))
+    
+    let _ = fs::remove_file(progress_file)
+    let _ = fs::remove_file(script_file)
+}
+```
+
+**Source**: `/home/daytona/workspace/source/src-tauri/src/mpv_ipc.rs:163-169`
+
+## Process Management
+
+### Check if Running
+
+```rust
+pub fn is_mpv_running(pid: u32) -> bool {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::System::Threading::*;
+        
+        unsafe {
+            let handle = OpenProcess(PROCESS_SYNCHRONIZE, 0, pid)
+            if handle == 0 { return false }
+            
+            let result = WaitForSingleObject(handle, 0)
+            CloseHandle(handle)
+            
+            result == WAIT_TIMEOUT  // Still running
+        }
+    }
+}
+```
+
+**Source**: `/home/daytona/workspace/source/src-tauri/src/mpv_ipc.rs:363-388`
+
+## Launch Result
+
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MpvLaunchResult {
+    pub success: bool,
+    pub error: Option<String>,
+    pub final_position: Option<f64>,
+    pub final_duration: Option<f64>,
+    pub completed: bool,  // true if watched >95% or EOF reached
+}
+```
+
+**Source**: `/home/daytona/workspace/source/src-tauri/src/mpv_ipc.rs:172-179`
+
+## Configuration
+
+MPV path is configured in Settings:
+
+```json
+{
+  "player": {
+    "mpv_path": "C:\\Program Files\\mpv\\mpv.exe",
+    "enable_cloud_cache": true,
+    "cloud_cache_dir": "C:\\Users\\User\\AppData\\Local\\StreamVault\\mpv_cache",
+    "cloud_cache_max_mb": 500
+  }
+}
+```
+
+## Related Components
+
+- [VideoPlayer](/components/video-player) - Built-in HTML5 player
+- [ResumeDialog](/components/resume-dialog) - Resume playback dialog
+- [Settings Modal](/components/settings-modal) - Configure MPV path

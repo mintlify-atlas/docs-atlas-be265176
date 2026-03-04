@@ -1,0 +1,497 @@
+---
+title: ChatWindow
+description: Real-time chat window component for direct messaging with friends
+---
+
+The `ChatWindow` component provides a floating chat interface for direct messaging with friends, featuring real-time message delivery and typing indicators.
+
+## Overview
+
+This component renders as a fixed popup window in the bottom-right corner of the screen, displaying a conversation thread with a specific friend. It supports real-time message delivery via WebSocket events and includes typing indicators.
+
+Source: `src/components/Social/ChatWindow.tsx:17-253`
+
+## Props
+
+| Prop | Type | Description |
+|------|------|-------------|
+| `friend` | `Friend` | Friend object containing ID, name, avatar, and online status |
+| `onClose` | `() => void` | Callback when chat window is closed |
+
+## State Management
+
+### Core State
+
+```typescript
+const [messages, setMessages] = useState<ChatMessage[]>([]);
+const [newMessage, setNewMessage] = useState('');
+const [isTyping, setIsTyping] = useState(false);
+const [loading, setLoading] = useState(true);
+const [error, setError] = useState<string | null>(null);
+const [sending, setSending] = useState(false);
+const scrollRef = useRef<HTMLDivElement>(null);
+const typingTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
+```
+Source: `src/components/Social/ChatWindow.tsx:23-30`
+
+### Message State
+
+- **messages**: Array of chat messages in chronological order
+- **newMessage**: Current input text
+- **isTyping**: Whether friend is currently typing
+- **loading**: Initial message load state
+- **error**: Error message if loading/sending fails
+- **sending**: Whether a message is currently being sent
+
+## WebSocket Events
+
+The component subscribes to real-time chat events:
+
+### chat_message
+
+Receives incoming messages from the friend:
+
+```typescript
+const unsubMessage = onSocialEvent('chat_message', (data) => {
+  if (data.fromUserId === friend.id) {
+    appendMessage(data.message as ChatMessage);
+    scrollToBottom();
+  }
+});
+```
+Source: `src/components/Social/ChatWindow.tsx:65-70`
+
+### chat_message_sent
+
+Confirms when your own message is delivered:
+
+```typescript
+const unsubSent = onSocialEvent('chat_message_sent', (data) => {
+  if (data.friendId === friend.id) {
+    appendMessage(data.message as ChatMessage);
+    scrollToBottom();
+  }
+});
+```
+Source: `src/components/Social/ChatWindow.tsx:72-77`
+
+### typing
+
+Shows typing indicator when friend is typing:
+
+```typescript
+const unsubTyping = onSocialEvent('typing', (data) => {
+  if (data.userId === friend.id) {
+    setIsTyping(true);
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+    typingTimeoutRef.current = setTimeout(() => setIsTyping(false), 3000);
+  }
+});
+```
+Source: `src/components/Social/ChatWindow.tsx:79-87`
+
+Typing indicator auto-hides after 3 seconds of inactivity.
+
+## Message Management
+
+### Loading Chat History
+
+```typescript
+const loadChatHistory = useCallback(async () => {
+  try {
+    setLoading(true);
+    setError(null);
+    const history = await getChatHistory(friend.id);
+    setMessages(history);
+    setTimeout(scrollToBottom, 100);
+  } catch (error) {
+    console.error('Failed to load chat history:', error);
+    setError('Failed to load chat history. Please try again later.');
+  } finally {
+    setLoading(false);
+  }
+}, [friend.id, scrollToBottom]);
+```
+Source: `src/components/Social/ChatWindow.tsx:47-60`
+
+### Appending Messages
+
+Deduplicates messages by ID to prevent duplicates:
+
+```typescript
+const appendMessage = useCallback((message: ChatMessage) => {
+  setMessages((prev) => {
+    if (prev.some((existing) => existing.id === message.id)) {
+      return prev; // Skip duplicate
+    }
+    return [...prev, message];
+  });
+}, []);
+```
+Source: `src/components/Social/ChatWindow.tsx:32-39`
+
+### Auto-scrolling
+
+Automatically scrolls to bottom when new messages arrive:
+
+```typescript
+const scrollToBottom = useCallback(() => {
+  if (scrollRef.current) {
+    scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }
+}, []);
+```
+Source: `src/components/Social/ChatWindow.tsx:41-45`
+
+## Sending Messages
+
+### Send Handler
+
+```typescript
+const handleSend = async () => {
+  if (!newMessage.trim() || sending) return;
+
+  try {
+    setSending(true);
+    setError(null);
+    const sentMessage = await sendChatMessage(friend.id, newMessage.trim());
+    if (sentMessage) {
+      appendMessage(sentMessage);
+      setTimeout(scrollToBottom, 0);
+    }
+    setNewMessage('');
+  } catch (error) {
+    console.error('Failed to send message:', error);
+    setError('Failed to send message. Please try again.');
+  } finally {
+    setSending(false);
+  }
+};
+```
+Source: `src/components/Social/ChatWindow.tsx:99-117`
+
+### Keyboard Handling
+
+```typescript
+const handleKeyDown = (e: React.KeyboardEvent) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    handleSend();
+  }
+};
+```
+Source: `src/components/Social/ChatWindow.tsx:119-124`
+
+Sends message on Enter, prevents send on Shift+Enter (for multiline support).
+
+### Typing Indicator
+
+```typescript
+const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  setNewMessage(e.target.value);
+  if (e.target.value.trim()) {
+    sendTypingIndicator(friend.id);
+  }
+};
+```
+Source: `src/components/Social/ChatWindow.tsx:126-131`
+
+Sends typing indicator to friend when typing non-empty text.
+
+## UI Layout
+
+### Window Structure
+
+Fixed popup with slide-up animation:
+
+```typescript
+<motion.div
+  initial={{ y: 20, opacity: 0 }}
+  animate={{ y: 0, opacity: 1 }}
+  exit={{ y: 20, opacity: 0 }}
+  className="fixed bottom-4 right-4 w-80 h-96 bg-zinc-900 border border-zinc-800 rounded-lg shadow-xl z-50 flex flex-col"
+>
+```
+Source: `src/components/Social/ChatWindow.tsx:135-140`
+
+Dimensions: 320px wide (w-80), 384px tall (h-96)
+
+### Header
+
+Displays friend info with online status:
+
+```typescript
+<div className="flex items-center gap-3 p-3 border-b border-zinc-800">
+  <div className="relative">
+    <div className="w-8 h-8 rounded-full bg-zinc-700 overflow-hidden">
+      {friend.avatar ? (
+        <img src={friend.avatar} alt="" className="w-full h-full object-cover" />
+      ) : (
+        <div className="w-full h-full flex items-center justify-center text-zinc-400 text-sm">
+          {friend.name.charAt(0).toUpperCase()}
+        </div>
+      )}
+    </div>
+    {friend.isOnline && (
+      <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 rounded-full border-2 border-zinc-900" />
+    )}
+  </div>
+  <div className="flex-1 min-w-0">
+    <p className="font-medium text-sm truncate">{friend.name}</p>
+    {isTyping && (
+      <p className="text-xs text-purple-400">typing...</p>
+    )}
+  </div>
+  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onClose}>
+    <X className="w-4 h-4" />
+  </Button>
+</div>
+```
+Source: `src/components/Social/ChatWindow.tsx:142-166`
+
+### Message List
+
+Scrollable message thread with grouped timestamps:
+
+```typescript
+<ScrollArea className="flex-1 p-3" ref={scrollRef}>
+  <div className="space-y-3">
+    {messages.map((msg, index) => {
+      const isOwn = msg.senderId !== friend.id;
+      const showTimestamp = index === 0 ||
+        messages[index - 1].timestamp < msg.timestamp - 300000; // 5 min gap
+
+      return (
+        <div key={msg.id}>
+          {showTimestamp && (
+            <div className="text-center text-xs text-zinc-500 my-2">
+              {formatRelativeTime(msg.timestamp)}
+            </div>
+          )}
+          <div className={`flex ${isOwn ? 'justify-end' : 'justify-start'}`}>
+            <div
+              className={`max-w-[80%] px-3 py-2 rounded-lg text-sm ${
+                isOwn
+                  ? 'bg-purple-600 text-white rounded-br-sm'
+                  : 'bg-zinc-800 text-white rounded-bl-sm'
+              }`}
+            >
+              {msg.text}
+            </div>
+          </div>
+        </div>
+      );
+    })}
+  </div>
+</ScrollArea>
+```
+Source: `src/components/Social/ChatWindow.tsx:169-222`
+
+### Message Styling
+
+- **Own messages**: Purple background, aligned right, rounded bottom-right corner sharp
+- **Friend messages**: Dark gray background, aligned left, rounded bottom-left corner sharp
+- **Timestamps**: Shown when 5+ minutes gap between messages
+
+### Input Area
+
+Message input with send button:
+
+```typescript
+<div className="p-3 border-t border-zinc-800">
+  <div className="flex gap-2">
+    <Input
+      placeholder="Type a message..."
+      value={newMessage}
+      onChange={handleInputChange}
+      onKeyDown={handleKeyDown}
+      disabled={sending}
+      className="flex-1 bg-zinc-800 border-zinc-700 text-sm"
+    />
+    <Button
+      size="icon"
+      onClick={handleSend}
+      disabled={!newMessage.trim() || sending}
+      className="bg-purple-600 hover:bg-purple-700"
+    >
+      {sending ? (
+        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+      ) : (
+        <Send className="w-4 h-4" />
+      )}
+    </Button>
+  </div>
+</div>
+```
+Source: `src/components/Social/ChatWindow.tsx:226-249`
+
+## Empty States
+
+### Loading State
+
+```typescript
+{loading ? (
+  <div className="flex items-center justify-center h-full text-zinc-500">
+    Loading messages...
+  </div>
+) : // ...
+}
+```
+Source: `src/components/Social/ChatWindow.tsx:184-187`
+
+### No Messages
+
+```typescript
+{messages.length === 0 ? (
+  <div className="flex flex-col items-center justify-center h-full text-zinc-500 text-sm">
+    <p>No messages yet</p>
+    <p className="text-xs">Say hi to {friend.name}!</p>
+  </div>
+) : // ...
+}
+```
+Source: `src/components/Social/ChatWindow.tsx:188-193`
+
+## Error Handling
+
+Displays error state with retry button:
+
+```typescript
+{error ? (
+  <div className="flex flex-col items-center justify-center h-full text-center p-4">
+    <AlertCircle className="w-8 h-8 text-red-500 mb-2" />
+    <p className="text-red-400 text-sm mb-2">Error loading chat</p>
+    <p className="text-zinc-500 text-xs">{error}</p>
+    <Button 
+      variant="outline" 
+      size="sm" 
+      className="mt-3 border-zinc-700"
+      onClick={loadChatHistory}
+    >
+      Retry
+    </Button>
+  </div>
+) : // ...
+}
+```
+Source: `src/components/Social/ChatWindow.tsx:170-183`
+
+## Message Deduplication
+
+The component prevents duplicate messages using ID-based filtering:
+
+```typescript
+const appendMessage = useCallback((message: ChatMessage) => {
+  setMessages((prev) => {
+    // Check if message already exists
+    if (prev.some((existing) => existing.id === message.id)) {
+      return prev; // Skip duplicate
+    }
+    return [...prev, message];
+  });
+}, []);
+```
+Source: `src/components/Social/ChatWindow.tsx:32-39`
+
+This is important because both `chat_message` (incoming) and `chat_message_sent` (echo) events can fire for the same message.
+
+## Timestamp Grouping
+
+Timestamps are displayed when there's a 5-minute gap between messages:
+
+```typescript
+const showTimestamp = index === 0 ||
+  messages[index - 1].timestamp < msg.timestamp - 300000; // 5 min gap
+
+return (
+  <div key={msg.id}>
+    {showTimestamp && (
+      <div className="text-center text-xs text-zinc-500 my-2">
+        {formatRelativeTime(msg.timestamp)}
+      </div>
+    )}
+    {/* Message bubble */}
+  </div>
+);
+```
+Source: `src/components/Social/ChatWindow.tsx:197-206`
+
+## Best Practices
+
+### Cleanup Timeouts
+
+Always clear typing indicator timeout on unmount:
+
+```typescript
+return () => {
+  unsubMessage();
+  unsubSent();
+  unsubTyping();
+  if (typingTimeoutRef.current) {
+    clearTimeout(typingTimeoutRef.current);
+  }
+};
+```
+Source: `src/components/Social/ChatWindow.tsx:89-96`
+
+### Optimistic Scrolling
+
+Use `setTimeout` with 0ms delay to scroll after DOM updates:
+
+```typescript
+if (sentMessage) {
+  appendMessage(sentMessage);
+  setTimeout(scrollToBottom, 0); // Wait for DOM update
+}
+```
+Source: `src/components/Social/ChatWindow.tsx:106-109`
+
+### Prevent Empty Messages
+
+Trim input and check for non-empty before sending:
+
+```typescript
+if (!newMessage.trim() || sending) return;
+```
+Source: `src/components/Social/ChatWindow.tsx:100`
+
+## Related Components
+
+- [FriendsPanel](/components/friends-panel) - Opens chat windows
+- [MessageNotification](/components/message-notification) - Shows new message alerts
+
+## API Functions
+
+- `getChatHistory(friendId)` - Retrieves message history with friend
+- `sendChatMessage(friendId, text)` - Sends a chat message
+- `sendTypingIndicator(friendId)` - Broadcasts typing status
+- `onSocialEvent(eventType, handler)` - Subscribes to WebSocket events
+- `formatRelativeTime(timestamp)` - Formats timestamp as relative time
+
+## ChatMessage Interface
+
+```typescript
+interface ChatMessage {
+  id: string;
+  senderId: string;
+  text: string;
+  timestamp: number; // Unix timestamp in milliseconds
+}
+```
+
+## Friend Interface
+
+```typescript
+interface Friend {
+  id: string;
+  name: string;
+  avatar: string | null;
+  isOnline?: boolean;
+  currentlyWatching?: {
+    contentType: 'movie' | 'tvshow';
+    title: string;
+  } | null;
+}
+```

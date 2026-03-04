@@ -1,0 +1,429 @@
+---
+title: Troubleshooting
+description: Common issues and solutions for StreamVault
+---
+
+This guide covers common problems you might encounter and their solutions.
+
+## Authentication & Cloud
+
+<Accordion title="Google Drive authentication fails">
+**Symptoms**: OAuth flow doesn't complete, or you see "Failed to authenticate" errors.
+
+**Solutions**:
+
+1. **Check OAuth consent screen status**
+   - Go to [Google Cloud Console](https://console.cloud.google.com)
+   - Verify your app is in "Testing" mode if not published
+   - Add your Google account as a test user
+
+2. **Verify redirect URI**
+   - Production: `https://indexer-oauth-callback.vercel.app/`
+   - Development: `http://localhost:8085/callback`
+   - Both must be added to "Authorized redirect URIs" in Google Cloud Console
+
+3. **Re-authenticate if scope changed**
+   - If you updated from v2.x to v3.x, the OAuth scope changed from `drive.readonly` to `drive` (full access)
+   - Go to **Settings → Cloud Storage → Disconnect**
+   - Reconnect to grant the new permissions
+
+4. **Check backend connectivity**
+   - Verify `AUTH_SERVER_URL` in `src-tauri/src/gdrive.rs` is correct
+   - Default: `https://streamvault-backend-server.onrender.com`
+   - Test backend health by visiting the URL in a browser
+</Accordion>
+
+<Accordion title="Google Drive delete permission denied">
+**Symptoms**: Can't delete cloud media, get "Insufficient permissions" error.
+
+**Cause**: Your existing OAuth token only has read-only access.
+
+**Solution**:
+
+1. Disconnect Google Drive:
+   - Go to **Settings → Cloud Storage**
+   - Click **Disconnect**
+
+2. Reconnect with new permissions:
+   - Click **Connect Google Drive**
+   - Authorize the app (you'll see delete permissions in the consent screen)
+
+3. The new token will have full Drive access including delete
+</Accordion>
+
+<Accordion title="Token expired errors during indexing">
+**Symptoms**: Indexing fails midway with "Token expired" or "401 Unauthorized" errors.
+
+**Cause**: Access tokens expire after 1 hour. The refresh token should automatically renew them.
+
+**Solution**:
+
+1. **Check refresh token**
+   - Tokens are stored in `%APPDATA%/StreamVault/gdrive_tokens.json`
+   - Ensure `refresh_token` field is present
+
+2. **Re-authenticate**
+   - If refresh fails repeatedly, disconnect and reconnect Google Drive
+
+3. **Backend issues**
+   - Verify backend `/auth/refresh` endpoint is accessible
+   - Check backend logs for token refresh errors
+</Accordion>
+
+## TMDB & Metadata
+
+<Accordion title="TMDB token expiration">
+**Symptoms**: Metadata stops loading, posters are missing, "401 Unauthorized" from TMDB.
+
+**Cause**: The default embedded TMDB token may have expired or been revoked.
+
+**Solution**:
+
+1. **Provide your own TMDB token**:
+   - Create account at [themoviedb.org](https://www.themoviedb.org/)
+   - Go to **Settings → API**
+   - Request an API key (free for personal use)
+   - Copy the **"API Read Access Token"** (Bearer token)
+
+2. **Add to StreamVault**:
+   - Open **Settings → General**
+   - Paste token into **TMDB API Token** field
+   - Click **Save**
+
+3. **Re-index library** to fetch missing metadata
+</Accordion>
+
+<Accordion title="Wrong metadata or posters">
+**Symptoms**: Media matched to incorrect TMDB entry, wrong posters/descriptions.
+
+**Solution**:
+
+1. **Use Fix Match feature**:
+   - Right-click the media card
+   - Select **Fix Match**
+   - Search for the correct title
+   - Select the right entry from results
+
+2. **Improve filename parsing**:
+   - Use standard naming: `Movie Title (Year).mp4`
+   - TV shows: `Show Name S01E01.mkv`
+   - Avoid special characters and extra text in filenames
+
+3. **Manual override** (advanced):
+   - Edit database directly if Fix Match doesn't work
+   - Database location: `%APPDATA%/StreamVault/media_library.db`
+   - Modify `tmdb_id` in the `media` table
+</Accordion>
+
+## Playback Issues
+
+<Accordion title="MPV not found error">
+**Symptoms**: Clicking Play shows "MPV not found" or "Failed to launch MPV".
+
+**Cause**: MPV is not installed or not in system PATH.
+
+**Solution**:
+
+**Windows**:
+1. Download MPV from [mpv.io](https://mpv.io/installation/) or [SourceForge](https://sourceforge.net/projects/mpv-player-windows/files/)
+2. Extract to `C:\Program Files\mpv\`
+3. Add to system PATH:
+   - Search "Environment Variables" in Windows
+   - Edit **System PATH**
+   - Add `C:\Program Files\mpv\`
+   - Restart StreamVault
+
+**Linux**:
+```bash
+sudo apt install mpv  # Ubuntu/Debian
+sudo dnf install mpv  # Fedora
+sudo pacman -S mpv    # Arch
+```
+
+**macOS**:
+```bash
+brew install mpv
+```
+
+4. **Custom MPV path** (if not in PATH):
+   - Go to **Settings → Player**
+   - Set **MPV Executable Path** to full path (e.g., `C:\mpv\mpv.exe`)
+</Accordion>
+
+<Accordion title="Resume playback not working">
+**Symptoms**: Media always starts from beginning, progress not saved.
+
+**Cause**: MPV IPC communication failure or database write issues.
+
+**Solution**:
+
+1. **Check MPV IPC**:
+   - Ensure MPV is launched via StreamVault (not manually)
+   - Verify named pipe communication is working (Windows)
+
+2. **Database permissions**:
+   - Ensure `%APPDATA%/StreamVault/media_library.db` is writable
+   - Check disk space is available
+
+3. **Watch to completion**:
+   - Progress is saved every 5 seconds during playback
+   - Exiting MPV should trigger final progress save
+   - If MPV crashes, progress may not save
+
+4. **Test with simple file**:
+   - Try a local MP4 file first
+   - Cloud streaming has additional complexity
+</Accordion>
+
+<Accordion title="MKV/AVI files won't play in browser player">
+**Symptoms**: Built-in browser player fails with "Format not supported".
+
+**Cause**: Browsers only support MP4, WebM, and M4V containers with H.264/VP8/VP9 codecs.
+
+**Solution**:
+
+1. **Use MPV instead** (recommended):
+   - MPV supports all formats without transcoding
+   - Right-click media → **Play with MPV**
+
+2. **Enable transcoding** (if FFmpeg is configured):
+   - StreamVault will attempt to transcode unsupported formats
+   - Go to **Settings → Player**
+   - Set **FFmpeg Path** to your FFmpeg installation
+   - Browser player will auto-transcode MKV/AVI to streamable format
+
+3. **Use VLC** as alternative:
+   - Install VLC media player
+   - Use **Open with VLC** context menu option
+</Accordion>
+
+## Database & Library
+
+<Accordion title="Database corruption or errors">
+**Symptoms**: App crashes on launch, "Database is locked", "Corrupted database" errors.
+
+**Solution**:
+
+1. **Backup current database**:
+   - Copy `%APPDATA%/StreamVault/media_library.db` to a safe location
+
+2. **Try SQLite recovery**:
+   ```bash
+   sqlite3 media_library.db ".recover" | sqlite3 recovered.db
+   ```
+
+3. **Reset database** (last resort):
+   - Close StreamVault completely
+   - Delete `%APPDATA%/StreamVault/media_library.db`
+   - Restart StreamVault (creates fresh database)
+   - Re-index your library
+
+4. **Prevent future corruption**:
+   - Always close StreamVault properly (don't force quit)
+   - Ensure antivirus isn't locking the database file
+   - Check disk health (run `chkdsk` on Windows)
+</Accordion>
+
+<Accordion title="Duplicate media entries">
+**Symptoms**: Same movie/episode appears multiple times in library.
+
+**Cause**: File moved or re-indexed, or multiple cloud folders with same content.
+
+**Solution**:
+
+1. **Delete duplicates**:
+   - Right-click duplicate entry → **Delete from Library**
+   - This removes database entry (doesn't delete the file)
+
+2. **Re-index library**:
+   - Click **Update Library** to refresh
+   - StreamVault should skip already-indexed files
+
+3. **Cloud duplicates**:
+   - Check if files exist in multiple Google Drive folders
+   - Remove duplicates from Drive
+   - Re-index library
+</Accordion>
+
+<Accordion title="Missing episodes or incomplete series">
+**Symptoms**: Some episodes don't appear, season shows fewer episodes than expected.
+
+**Cause**: Filename parsing failed, or files not detected as video.
+
+**Solution**:
+
+1. **Check filename format**:
+   - Standard format: `Show Name S01E01.mkv` or `Show Name 1x01.mkv`
+   - Include season and episode numbers
+   - Avoid ambiguous filenames
+
+2. **Supported formats**:
+   - `.mkv`, `.mp4`, `.avi`, `.mov`, `.webm`, `.m4v`, `.wmv`, `.flv`, `.ts`, `.m2ts`
+   - Check file extensions are correct
+
+3. **Orphan cleanup**:
+   - StreamVault automatically removes orphaned episode entries
+   - Re-index to detect episodes with corrected filenames
+
+4. **Check Google Drive**:
+   - Ensure all episodes are uploaded
+   - Verify files aren't in "Trash"
+   - Check sharing permissions
+</Accordion>
+
+## Network & Connectivity
+
+<Accordion title="Slow cloud indexing or streaming">
+**Symptoms**: Indexing takes forever, streaming buffers constantly.
+
+**Cause**: Network throttling, proxy issues, or Google Drive rate limits.
+
+**Solution**:
+
+1. **Check internet speed**:
+   - Run speed test at [fast.com](https://fast.com)
+   - Ensure stable connection during indexing
+
+2. **Google Drive API limits**:
+   - Default polling is 5 seconds
+   - Large libraries (10,000+ files) may hit rate limits
+   - Indexing pauses automatically if rate limited
+
+3. **Proxy/VPN issues**:
+   - Disable VPN temporarily to test
+   - Configure proxy settings in **Settings → Network** (if available)
+
+4. **Large files**:
+   - Files >4GB may take time to buffer in browser player
+   - Use MPV for large files (streams chunks instead of loading entirely)
+</Accordion>
+
+<Accordion title="Firewall or antivirus blocking StreamVault">
+**Symptoms**: OAuth fails, backend unreachable, MPV won't launch.
+
+**Cause**: Security software blocking network or process execution.
+
+**Solution**:
+
+1. **Add StreamVault to firewall exceptions**:
+   - Windows Defender Firewall → Allow an app
+   - Add `StreamVault.exe` to allowed apps
+
+2. **Antivirus exclusions**:
+   - Add `%APPDATA%/StreamVault/` to exclusions
+   - Add StreamVault install directory to exclusions
+
+3. **Check ports**:
+   - OAuth callback: `localhost:8085`
+   - Ensure no other app is using this port
+
+4. **Test connectivity**:
+   ```bash
+   curl https://streamvault-backend-server.onrender.com/health
+   ```
+   Should return backend health status
+</Accordion>
+
+## Windows-Specific Issues
+
+<Accordion title="Notifications not appearing">
+**Symptoms**: No Windows notifications when new media is indexed.
+
+**Cause**: Windows notification permissions or system tray issues.
+
+**Solution**:
+
+1. **Enable Windows notifications**:
+   - **Settings → System → Notifications**
+   - Ensure notifications are enabled for StreamVault
+
+2. **Check Focus Assist**:
+   - Turn off Focus Assist (prevents all notifications)
+   - Or add StreamVault to priority list
+
+3. **System tray**:
+   - Ensure StreamVault icon appears in system tray
+   - Right-click tray icon → verify notifications are enabled
+
+4. **Restart app**:
+   - Close StreamVault completely (including system tray)
+   - Restart and test notifications
+</Accordion>
+
+<Accordion title="App won't start or crashes immediately">
+**Symptoms**: StreamVault won't launch, crashes on startup, white screen.
+
+**Solution**:
+
+1. **Check Windows version**:
+   - Requires Windows 10 version 1809 or later
+   - Update Windows to latest version
+
+2. **WebView2 runtime**:
+   - Tauri apps require Microsoft Edge WebView2
+   - Download from [microsoft.com](https://developer.microsoft.com/en-us/microsoft-edge/webview2/)
+   - Install and restart
+
+3. **Corrupted config**:
+   - Delete `%APPDATA%/StreamVault/media_config.json`
+   - Restart StreamVault (creates default config)
+
+4. **Check logs**:
+   - Logs are in `%APPDATA%/StreamVault/logs/` (if logging is enabled)
+   - Look for error messages indicating the cause
+
+5. **Clean reinstall**:
+   - Uninstall StreamVault
+   - Delete `%APPDATA%/StreamVault/` (backup database first!)
+   - Reinstall latest version
+</Accordion>
+
+## Performance Issues
+
+<Accordion title="UI is slow or laggy">
+**Symptoms**: App feels sluggish, animations stutter, high CPU usage.
+
+**Solution**:
+
+1. **Large library optimization**:
+   - Libraries with >1,000 items may experience slowdown
+   - Enable chunked rendering (automatic for >500 items in cloud view)
+   - Use search/filters to reduce visible items
+
+2. **Close other apps**:
+   - Free up RAM and CPU resources
+   - Check Task Manager for resource hogs
+
+3. **Update graphics drivers**:
+   - Outdated drivers can cause rendering issues
+   - Update from manufacturer website (NVIDIA, AMD, Intel)
+
+4. **Disable animations** (if available):
+   - Reduce visual effects in **Settings → Appearance**
+
+5. **Hardware acceleration**:
+   - Ensure WebView2 has GPU acceleration enabled
+   - Check `chrome://gpu` in any Edge browser
+</Accordion>
+
+## Still Having Issues?
+
+If your problem isn't covered here:
+
+1. **Check GitHub Issues**: [github.com/SlasshyOverhere/StreamVault/issues](https://github.com/SlasshyOverhere/StreamVault/issues)
+2. **Create a new issue** with:
+   - Operating system and version
+   - StreamVault version (check **Settings → General → About**)
+   - Steps to reproduce
+   - Error messages or screenshots
+3. **Check backend logs** if self-hosting
+4. **Review configuration files**:
+   - Frontend `.env`
+   - Backend `.env`
+   - `src-tauri/src/gdrive.rs` (AUTH_SERVER_URL)
+
+## Related Resources
+
+- [Self-Hosting Guide](/guides/self-hosting)
+- [Configuration Settings](/configuration/settings)
+- [Keyboard Shortcuts](/guides/keyboard-shortcuts)

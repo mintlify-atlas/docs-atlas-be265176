@@ -1,0 +1,219 @@
+---
+title: Introduction
+description: A modern, cloud-first media library manager built with Tauri, Rust, and React
+---
+
+<img
+  className="block dark:hidden"
+  src="/images/hero-light.svg"
+  alt="StreamVault Hero Light"
+/>
+<img
+  className="hidden dark:block"
+  src="/images/hero-dark.svg"
+  alt="StreamVault Hero Dark"
+/>
+
+## What is StreamVault?
+
+StreamVault is a cloud-first desktop application for managing your media library with Google Drive integration, rich metadata from TMDB, and seamless playback through MPV. Built with modern technologies, it combines the power of Rust backend processing with a sleek React frontend.
+
+Index your entire Google Drive video collection with one click, fetch beautiful posters and metadata automatically, and enjoy native playback of any video format without transcoding.
+
+<CardGroup cols={2}>
+  <Card
+    title="Quick start"
+    icon="rocket"
+    href="/quickstart"
+  >
+    Get up and running in minutes with our step-by-step guide
+  </Card>
+  <Card
+    title="Installation"
+    icon="download"
+    href="/installation"
+  >
+    Install prerequisites and build StreamVault from source
+  </Card>
+  <Card
+    title="Google Drive integration"
+    icon="cloud"
+    href="/features/google-drive"
+  >
+    Learn how cloud indexing and real-time sync works
+  </Card>
+  <Card
+    title="Metadata management"
+    icon="database"
+    href="/features/metadata"
+  >
+    Discover how TMDB integration enriches your library
+  </Card>
+</CardGroup>
+
+## Key features
+
+<CardGroup cols={3}>
+  <Card title="Cloud-first library" icon="cloud-arrow-up">
+    Index your entire Google Drive with one click. Real-time change detection monitors for new content using the Changes API with 5-second polling intervals.
+  </Card>
+  <Card title="Rich metadata" icon="images">
+    Automatically fetch posters, backdrops, overviews, and ratings from TMDB. TV shows are properly grouped by series and season with episode thumbnails.
+  </Card>
+  <Card title="Universal playback" icon="play">
+    Native MPV integration plays any format (MKV, MP4, AVI, HDR) without transcoding. Resume playback exactly where you left off.
+  </Card>
+  <Card title="Background sync" icon="sync">
+    Incremental updates detect new files even when minimized to system tray. Get Windows notifications when new media is added.
+  </Card>
+  <Card title="Episode browser" icon="tv">
+    Browse TV series by season with full episode metadata, thumbnails, and air dates. Fix misidentified content with manual matching.
+  </Card>
+  <Card title="Monochrome UI" icon="palette">
+    Sleek black and white design with smooth animations powered by Framer Motion. Context menus provide quick access to common operations.
+  </Card>
+</CardGroup>
+
+## Architecture
+
+StreamVault is built on a modern technology stack designed for performance and reliability:
+
+<CodeGroup>
+```plaintext Frontend
+React 18 - UI framework
+TypeScript - Type safety
+TailwindCSS - Styling
+Radix UI - Accessible components
+Framer Motion - Animations
+Vite - Build tooling
+```
+
+```plaintext Backend
+Rust - Systems programming
+Tauri v1 - Desktop framework
+SQLite - Local database
+rusqlite - Database operations
+tokio - Async runtime
+requwest - HTTP client
+```
+
+```plaintext External Services
+Google Drive API - Cloud storage
+TMDB API - Metadata provider
+MPV - Media playback engine
+OAuth2 - Authentication
+```
+</CodeGroup>
+
+### How it works
+
+<Steps>
+  <Step title="Cloud sync">
+    Monitors Google Drive for changes using the Changes API with 5-second polling. Detects new files automatically, even when minimized to system tray.
+  </Step>
+  <Step title="Smart parsing">
+    Extracts title, year, season, and episode information from filenames using regex patterns optimized for common naming conventions.
+  </Step>
+  <Step title="Metadata enrichment">
+    Queries TMDB API for rich metadata including posters, backdrops, overviews, cast information, and ratings. Images are cached locally in `%APPDATA%/StreamVault/image_cache/`.
+  </Step>
+  <Step title="Database storage">
+    Stores all metadata in a local SQLite database (`media_library.db`) for instant access. Supports movies, TV shows, and episodes with proper relationships.
+  </Step>
+  <Step title="Duplicate prevention">
+    Automatically skips already-indexed files using incremental updates. Only processes new content to minimize API calls and processing time.
+  </Step>
+  <Step title="Native playback">
+    Launches MPV player with IPC support for progress tracking. Resume positions are saved automatically and restored on next playback.
+  </Step>
+</Steps>
+
+## Supported formats
+
+StreamVault supports all video formats that MPV can handle, including:
+
+<CardGroup cols={2}>
+  <Card title="Container formats" icon="box">
+    `.mkv` `.mp4` `.avi` `.mov` `.webm` `.m4v` `.wmv` `.flv` `.ts` `.m2ts`
+  </Card>
+  <Card title="Special features" icon="wand-magic-sparkles">
+    HDR, 4K, multiple audio tracks, subtitles, and advanced codec support through MPV
+  </Card>
+</CardGroup>
+
+<Note>
+  StreamVault relies on MPV for playback capabilities. Any format supported by your MPV installation will work seamlessly.
+</Note>
+
+## Platform support
+
+Currently optimized for **Windows** with plans for Linux and macOS support.
+
+<CardGroup cols={3}>
+  <Card title="Windows" icon="windows">
+    Full support with system tray, notifications, and native MPV IPC via named pipes
+  </Card>
+  <Card title="Linux" icon="linux">
+    Coming soon - Tauri and MPV support available, integration in progress
+  </Card>
+  <Card title="macOS" icon="apple">
+    Coming soon - Tauri and MPV support available, integration in progress
+  </Card>
+</CardGroup>
+
+## What's new in v3.0
+
+<AccordionGroup>
+  <Accordion title="v3.0.21 - Cloud-only mode" icon="cloud">
+    - Removed local library support for simplified cloud-first experience
+    - Single "Update Library" button for all cloud indexing operations
+    - Improved background polling with 5-second change detection
+    - Streamlined navigation without local tabs
+    - Enhanced incremental indexing performance
+  </Accordion>
+  
+  <Accordion title="v3.0.0 - Monochrome redesign" icon="paintbrush">
+    - Complete UI overhaul with black/white/grayscale aesthetic
+    - Full Google Drive indexing with one-click setup
+    - Simplified cloud settings removing folder-based management
+    - Enhanced Google Drive sync using Changes API
+    - Improved metadata caching and image management
+  </Accordion>
+</AccordionGroup>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card
+    title="Install StreamVault"
+    icon="download"
+    href="/installation"
+  >
+    Set up your development environment and build from source
+  </Card>
+  <Card
+    title="Follow the quickstart"
+    icon="bolt"
+    href="/quickstart"
+  >
+    Connect Google Drive, add TMDB API key, and scan your first library
+  </Card>
+  <Card
+    title="Configure settings"
+    icon="gear"
+    href="/configuration/settings"
+  >
+    Customize player paths, cache settings, and scan intervals
+  </Card>
+  <Card
+    title="Explore features"
+    icon="compass"
+    href="/features/google-drive"
+  >
+    Learn about cloud sync, metadata fetching, and playback features
+  </Card>
+</CardGroup>
+
+<Warning>
+  StreamVault requires a self-hosted or configured backend server for Google Drive OAuth and TMDB proxy functionality. See the [self-hosting guide](/guides/self-hosting) for details.
+</Warning>

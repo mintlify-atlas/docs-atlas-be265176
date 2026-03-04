@@ -1,0 +1,293 @@
+---
+title: 'Playback Commands'
+description: 'Control media playback with MPV, VLC, or built-in player'
+icon: 'play'
+---
+
+## Overview
+
+Playback commands handle launching external players (MPV, VLC) and managing playback sessions with progress tracking.
+
+## Commands
+
+### play_media
+
+Launch MPV player with a media item, including cloud streaming support.
+
+<CodeGroup>
+```rust Rust Signature
+#[tauri::command]
+async fn play_with_mpv(
+    window: Window,
+    state: State<'_, AppState>,
+    media_id: i64,
+    resume: bool,
+) -> Result<ApiResponse, String>
+```
+
+```typescript TypeScript
+import { invoke } from '@tauri-apps/api/tauri';
+
+await invoke('play_with_mpv', {
+  mediaId: 123,
+  resume: true  // Resume from last position
+});
+```
+</CodeGroup>
+
+<ParamField path="media_id" type="number" required>
+  Database ID of the media item to play
+</ParamField>
+
+<ParamField path="resume" type="boolean" required>
+  Whether to resume from saved position
+</ParamField>
+
+<ResponseField name="ApiResponse" type="object">
+  <Expandable title="Response fields">
+    <ResponseField name="message" type="string">
+      Success message with media title
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<Info>
+  **Cloud Streaming**: For cloud files, this command:
+  1. Fetches a temporary streaming URL from Google Drive
+  2. Passes the URL and OAuth token to MPV via `--http-header-fields`
+  3. Optionally enables disk caching for smoother playback
+</Info>
+
+<Note>
+  MPV is launched with IPC (named pipe on Windows) for real-time progress tracking. Progress is saved every 2 seconds and on quit.
+</Note>
+
+---
+
+### play_with_vlc
+
+Launch VLC player with a local media file.
+
+<CodeGroup>
+```rust Rust Signature
+#[tauri::command]
+async fn play_with_vlc(
+    state: State<'_, AppState>,
+    media_id: i64,
+    resume: bool,
+) -> Result<ApiResponse, String>
+```
+
+```typescript TypeScript
+await invoke('play_with_vlc', {
+  mediaId: 123,
+  resume: false
+});
+```
+</CodeGroup>
+
+<ParamField path="media_id" type="number" required>
+  Media item ID
+</ParamField>
+
+<ParamField path="resume" type="boolean" required>
+  Whether to start at saved position
+</ParamField>
+
+<Warning>
+  VLC does **not** support authenticated cloud streaming. Use MPV or the built-in player for cloud files.
+</Warning>
+
+---
+
+### update_resume_position
+
+See [Library Management - update_resume_position](/api/tauri/library#update_resume_position)
+
+---
+
+### get_active_mpv_sessions
+
+Get all currently running MPV playback sessions.
+
+<CodeGroup>
+```rust Rust Signature
+#[tauri::command]
+async fn get_active_mpv_sessions(
+    state: State<'_, AppState>,
+) -> Result<Vec<MpvSession>, String>
+```
+
+```typescript TypeScript
+const sessions = await invoke<MpvSession[]>('get_active_mpv_sessions');
+
+sessions.forEach(session => {
+  console.log(`Playing: ${session.title} (PID: ${session.pid})`);
+});
+```
+</CodeGroup>
+
+<ResponseField name="MpvSession[]" type="array">
+  Array of active MPV sessions
+  
+  <Expandable title="MpvSession fields">
+    <ResponseField name="media_id" type="number">
+      Media item being played
+    </ResponseField>
+    <ResponseField name="pid" type="number">
+      Operating system process ID
+    </ResponseField>
+    <ResponseField name="title" type="string">
+      Media title
+    </ResponseField>
+    <ResponseField name="start_time" type="number">
+      Unix timestamp when playback started
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+### kill_mpv_session
+
+Terminate a specific MPV playback session.
+
+<Note>
+  Not directly exposed as a Tauri command. Use OS process management or wait for natural termination.
+</Note>
+
+---
+
+### mpv_seek
+
+Seek to a specific position in MPV playback.
+
+<Info>
+  Direct MPV IPC control is handled internally. For Watch Together sync, use `wt_send_mpv_command` instead.
+</Info>
+
+---
+
+### mpv_set_pause
+
+Pause or resume MPV playback.
+
+<Info>
+  Controlled via MPV's IPC interface. See Watch Together commands for synchronized playback control.
+</Info>
+
+---
+
+### get_stream_info
+
+Get streaming URL for built-in player.
+
+<CodeGroup>
+```rust Rust Signature
+#[tauri::command]
+async fn get_stream_info(
+    state: State<'_, AppState>,
+    media_id: i64,
+) -> Result<StreamInfo, String>
+```
+
+```typescript TypeScript
+const streamInfo = await invoke<StreamInfo>('get_stream_info', {
+  mediaId: 123
+});
+
+// For cloud files
+if (streamInfo.is_cloud && streamInfo.access_token) {
+  const headers = {
+    'Authorization': `Bearer ${streamInfo.access_token}`
+  };
+  // Use headers when fetching stream_url
+}
+```
+</CodeGroup>
+
+<ParamField path="media_id" type="number" required>
+  Media item to stream
+</ParamField>
+
+<ResponseField name="StreamInfo" type="object">
+  <Expandable title="Response fields">
+    <ResponseField name="stream_url" type="string">
+      URL or file path to play
+    </ResponseField>
+    <ResponseField name="file_path" type="string">
+      Original file path
+    </ResponseField>
+    <ResponseField name="title" type="string">
+      Media title
+    </ResponseField>
+    <ResponseField name="poster" type="string | undefined">
+      Cached poster asset URL
+    </ResponseField>
+    <ResponseField name="duration_seconds" type="number | undefined">
+      Total duration
+    </ResponseField>
+    <ResponseField name="resume_position_seconds" type="number | undefined">
+      Saved playback position
+    </ResponseField>
+    <ResponseField name="is_cloud" type="boolean">
+      Whether this is a cloud file
+    </ResponseField>
+    <ResponseField name="access_token" type="string | undefined">
+      OAuth access token for cloud streaming (valid for 1 hour)
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<Warning>
+  Cloud streaming URLs are temporary (expire in 1 hour). Access tokens must be included in the `Authorization` header for video requests.
+</Warning>
+
+---
+
+## Events
+
+### mpv-playback-ended
+
+Emitted when MPV playback finishes.
+
+<CodeGroup>
+```typescript TypeScript
+import { listen } from '@tauri-apps/api/event';
+
+const unlisten = await listen<{
+  media_id: number;
+  title: string;
+  season_number?: number;
+  episode_number?: number;
+  media_type: string;
+  final_position: number;
+  final_duration: number;
+  completed: boolean;
+}>('mpv-playback-ended', (event) => {
+  if (event.payload.completed) {
+    console.log(`Finished watching: ${event.payload.title}`);
+  }
+});
+```
+</CodeGroup>
+
+<ResponseField name="payload" type="object">
+  <Expandable title="Event payload">
+    <ResponseField name="media_id" type="number">
+      Media item ID
+    </ResponseField>
+    <ResponseField name="title" type="string">
+      Media title
+    </ResponseField>
+    <ResponseField name="final_position" type="number">
+      Last playback position in seconds
+    </ResponseField>
+    <ResponseField name="final_duration" type="number">
+      Total duration in seconds
+    </ResponseField>
+    <ResponseField name="completed" type="boolean">
+      Whether playback reached ≥95% (marked as watched)
+    </ResponseField>
+  </Expandable>
+</ResponseField>
